@@ -48,8 +48,14 @@
       const { data } = await sb.auth.getSession();
       if (!data.session) { ik = null; return; }
       const { data: prof, error } = await sb.rpc("boa_ik");
-      ik = error ? null : prof;
-      if (error) fout = error.message;
+      if (error) {
+        ik = null;
+        fout = error.message.includes("function") || error.message.includes("schema")
+          ? "Het identiteitsregister is nog niet actief. Draai schema.sql in Supabase."
+          : error.message;
+        return;
+      }
+      ik = prof;
     }
 
     function login() {
@@ -148,9 +154,15 @@
       document.getElementById("login")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = new FormData(e.target);
-        const { error } = await sb.auth.signInWithPassword({ email: String(f.get("email")), password: String(f.get("password")) });
-        fout = error ? "Aanmelden lukt niet." : "";
+        fout = "";
+        const { data, error } = await sb.auth.signInWithPassword({ email: String(f.get("email")).trim(), password: String(f.get("password")) });
+        if (error || !data.session) {
+          fout = error ? "Aanmelden lukt niet." : "Sessie niet opgeslagen.";
+          teken();
+          return;
+        }
         await vernieuw();
+        if (!ik && !fout) fout = "Aangemeld, maar het dossier is niet geladen.";
         teken();
       });
       document.getElementById("uit")?.addEventListener("click", async () => { await sb.auth.signOut(); ik = null; dossier = null; teken(); });
