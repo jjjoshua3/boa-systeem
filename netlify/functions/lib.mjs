@@ -44,7 +44,8 @@ export async function verstuurUitnodiging({ naar, naam }) {
     "",
     ...links.map(([label, url]) => `${label}: ${url}`),
     "",
-    "Log in met je zakelijke adres en het wachtwoord dat je al hebt, of met het startwachtwoord dat je van de beheerder hebt gekregen.",
+    "Log in met je Client-ID. Die staat in je gebruikersomgeving: https://boaportaal.nl/account",
+    "Het wachtwoord is het wachtwoord dat je al hebt, of het startwachtwoord dat je van de beheerder hebt gekregen.",
     "Op mail.boaportaal.nl gebruik je je loginnaam, zonder @boaportaal.nl.",
     "",
     "Groet,",
@@ -57,7 +58,8 @@ export async function verstuurUitnodiging({ naar, naam }) {
     <p>${aanhef}</p>
     <p>Je bent uitgenodigd voor de medewerkersportalen van BOA Portaal.</p>
     <ul style="padding-left:18px">${items}</ul>
-    <p>Log in met je zakelijke adres en het wachtwoord dat je al hebt, of met het startwachtwoord dat je van de beheerder hebt gekregen.</p>
+    <p>Log in met je Client-ID. Die staat in je gebruikersomgeving: <a href="https://boaportaal.nl/account" style="color:#1d4ed8">https://boaportaal.nl/account</a></p>
+    <p>Het wachtwoord is het wachtwoord dat je al hebt, of het startwachtwoord dat je van de beheerder hebt gekregen.</p>
     <p>Op mail.boaportaal.nl gebruik je je loginnaam, zonder @boaportaal.nl.</p>
     <p>Groet,<br>BOA Portaal</p>
   </div>`;
