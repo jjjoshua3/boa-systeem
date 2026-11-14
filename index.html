@@ -10,7 +10,7 @@
     body { margin:0; font:14px/1.45 ui-monospace, "Segoe UI", sans-serif; background:var(--veld); color:var(--tekst); }
     header { background:#020617; border-bottom:1px solid var(--lijn); padding:14px 18px; }
     header strong { letter-spacing:.06em; }
-    main { max-width:980px; margin:0 auto; padding:18px 14px 48px; }
+    main { max-width:1180px; margin:0 auto; padding:18px 14px 48px; }
     h1 { font-size:20px; margin:0 0 8px; }
     .kaart { background:var(--kaart); border:1px solid var(--lijn); padding:14px; margin-top:12px; }
     label { display:grid; gap:4px; margin-bottom:10px; color:var(--muted); font-size:12px; }
@@ -42,7 +42,8 @@
     const sb = createClient(URL, KEY);
     const app = document.querySelector("#app");
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&" + "amp;", "<": "&" + "lt;", ">": "&" + "gt;", '"': "&" + "quot;", "'": "&" + "#39;"}[c]));
-    let ik = null, tab = "zoek", dossier = null, audit = [], fout = "", melding = "", glas = false;
+    let ik = null, tab = "zoek", dossier = null, overzicht = { inlog: [], register: [], ip_zichtbaar: false }, fout = "", melding = "", glas = false;
+    let bronF = "", soortF = "", niveauF = "", dagenF = "30", qF = "";
 
     async function vernieuw() {
       const { data } = await sb.auth.getSession();
@@ -97,7 +98,32 @@
             <button id="reset" type="button">Automatische wachtwoord-reset versturen</button>
             ${ik.rol === "beheerder" ? `<button id="lock" type="button" class="sec">${d.locked ? "Account ontgrendelen" : "Account vergrendelen"}</button>` : `<button class="sec" disabled>Fysiek wachtwoord / ontgrendelen (alleen hoofdbeheerder)</button>`}
           </div>
-        </div>`;
+        </div>
+        ${activiteitHtml(d)}`;
+    }
+
+    function activiteitHtml(d) {
+      const ip = Boolean(d.ip_zichtbaar);
+      const inlog = d.inlog || [];
+      const hand = d.handelingen || [];
+      return `<div class="kaart"><h3>Laatste 30 dagen, audit</h3>
+        <p>Inlogpogingen op boaportaal.nl, servicedesk en dit systeem. ${ip ? "IP-adressen zijn zichtbaar omdat je hoofdbeheerder bent." : "IP-adressen zijn afgeschermd. Alleen een hoofdbeheerder ziet ze."}</p>
+        ${d.auditFout ? `<p class="fout">${esc(d.auditFout)}</p>` : ""}
+        <table><thead><tr><th>Moment</th><th>Bron</th><th>Uitkomst</th>${ip ? "<th>IP</th>" : ""}</tr></thead><tbody>
+          ${inlog.length ? inlog.map((r) => `<tr><td>${esc(new Date(r.moment).toLocaleString("nl-NL"))}</td><td>${esc(r.bron)}</td><td>${esc(r.resultaat)}</td>${ip ? `<td>${esc(r.ip || "—")}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${ip ? 4 : 3}">Geen inlogpogingen in 30 dagen.</td></tr>`}
+        </tbody></table>
+        <h3>Registerhandelingen</h3>
+        <table><thead><tr><th>Moment</th><th>Bron</th><th>Soort</th><th>Niveau</th><th>Wie</th><th>Reden</th></tr></thead><tbody>
+          ${hand.length ? hand.map((r) => `<tr><td>${esc(new Date(r.moment).toLocaleString("nl-NL"))}</td><td>${esc(r.bron)}</td><td>${esc(r.soort)}</td><td>${esc(r.niveau)}</td><td>${esc(r.beheerder)} · ${esc(r.rol_in_regel)}</td><td>${esc(r.reden)}</td></tr>`).join("") : `<tr><td colspan="6">Geen registerregels in 30 dagen.</td></tr>`}
+        </tbody></table>
+        ${ik.rol === "beheerder" ? `<form id="email" style="margin-top:12px">
+          <h3>Zakelijk adres wijzigen</h3>
+          <p>Alleen de hoofdbeheerder. Het nieuwe adres komt niet terug in het scherm en niet in het auditlog.</p>
+          <label>Nieuw zakelijk adres<input type="email" name="email" required></label>
+          <label>Reden<textarea name="reden" required minlength="12" placeholder="Adreswijziging op verzoek van de medewerker, ticket M2611-0412"></textarea></label>
+          <button>Adres wijzigen</button>
+        </form>` : ""}
+      </div>`;
     }
 
     function medewerkers() {
@@ -113,9 +139,49 @@
     }
 
     function auditHtml() {
-      return `<h1>Audit-overzicht</h1><table><thead><tr><th>Moment</th><th>Beheerder</th><th>Dossier</th><th>Ticket</th><th>Soort</th><th>Niveau</th><th>Reden</th></tr></thead><tbody>
-        ${audit.map((a) => `<tr><td>${esc(new Date(a.moment).toLocaleString("nl-NL"))}</td><td>${esc(a.beheerder_naam)} ${esc(a.beheerder_id)}</td><td>${esc(a.doel_pv_naam)} ${esc(a.doel_client_id)}</td><td>${esc(a.ticketnummer)}</td><td>${esc(a.soort)}</td><td>${esc(a.niveau)}</td><td>${esc(a.reden)}</td></tr>`).join("")}
-      </tbody></table>`;
+      const ip = Boolean(overzicht.ip_zichtbaar);
+      const inlog = overzicht.inlog || [];
+      const register = overzicht.register || [];
+      const opt = (waarde, label, huidig) => `<option value="${waarde}" ${huidig === waarde ? "selected" : ""}>${label}</option>`;
+      return `<h1>Audit-overzicht</h1>
+        <form id="filter" class="kaart">
+          <div class="rij">
+            <label>Bron<select name="bron">
+              ${opt("", "Alle sites", bronF)}
+              ${opt("portaal", "boaportaal.nl", bronF)}
+              ${opt("servicedesk", "servicedesk.boaportaal.nl", bronF)}
+              ${opt("systeem", "systeem.boaportaal.nl", bronF)}
+            </select></label>
+            <label>Soort<select name="soort">
+              ${opt("", "Alle soorten", soortF)}
+              ${opt("INZAGE", "Inzage", soortF)}
+              ${opt("BREAK_GLASS", "Nood-opvraag", soortF)}
+              ${opt("CRITICAL_AUTH_CHANGE", "Auth-wijziging", soortF)}
+            </select></label>
+            <label>Niveau<select name="niveau">
+              ${opt("", "Alle niveaus", niveauF)}
+              ${opt("INFO", "INFO", niveauF)}
+              ${opt("HIGH", "HIGH", niveauF)}
+              ${opt("CRITICAL", "CRITICAL", niveauF)}
+            </select></label>
+            <label>Periode<select name="dagen">
+              ${opt("7", "7 dagen", dagenF)}
+              ${opt("30", "30 dagen", dagenF)}
+              ${opt("90", "90 dagen", dagenF)}
+            </select></label>
+            <label>Client-ID of ticket<input name="q" value="${esc(qF)}" placeholder="BP- of M"></label>
+          </div>
+          <button>Filter</button>
+          <p>${ip ? "IP-kolom is zichtbaar voor de hoofdbeheerder." : "IP-adressen zijn verborgen. Alleen een hoofdbeheerder ziet ze."}</p>
+        </form>
+        <h2>Inlogpogingen</h2>
+        <table><thead><tr><th>Moment</th><th>Bron</th><th>Dossier</th><th>Uitkomst</th>${ip ? "<th>IP</th>" : ""}</tr></thead><tbody>
+          ${inlog.length ? inlog.map((r) => `<tr><td>${esc(new Date(r.moment).toLocaleString("nl-NL"))}</td><td>${esc(r.bron)}</td><td>${esc(r.pv_naam)} ${esc(r.client_id)}</td><td>${esc(r.resultaat)}</td>${ip ? `<td>${esc(r.ip || "—")}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${ip ? 5 : 4}">Geen inlogpogingen in deze selectie.</td></tr>`}
+        </tbody></table>
+        <h2>Register</h2>
+        <table><thead><tr><th>Moment</th><th>Bron</th><th>Beheerder</th><th>Dossier</th><th>Ticket</th><th>Soort</th><th>Niveau</th><th>Reden</th></tr></thead><tbody>
+          ${register.length ? register.map((a) => `<tr><td>${esc(new Date(a.moment).toLocaleString("nl-NL"))}</td><td>${esc(a.bron || "systeem")}</td><td>${esc(a.beheerder_naam)} ${esc(a.beheerder_id)}</td><td>${esc(a.doel_pv_naam)} ${esc(a.doel_client_id)}</td><td>${esc(a.ticketnummer)}</td><td>${esc(a.soort)}</td><td>${esc(a.niveau)}</td><td>${esc(a.reden)}</td></tr>`).join("") : `<tr><td colspan="8">Geen registerregels in deze selectie.</td></tr>`}
+        </tbody></table>`;
     }
 
     function schil() {
@@ -127,6 +193,27 @@
       </div>
       <p>${esc(ik.rol)} · ${esc(ik.pv_naam)} · ${esc(ik.client_id)}</p>
       ${tab==="zoek" ? zoek() : tab==="mensen" ? medewerkers() : auditHtml()}`;
+    }
+
+    async function laad30() {
+      if (!dossier?.client_id) return;
+      const { data, error } = await sb.rpc("boa_dossier_30", { p_client_id: dossier.client_id });
+      if (error) {
+        dossier.inlog = [];
+        dossier.handelingen = [];
+        dossier.auditFout = error.message.includes("function") ? "Draai migrations/0005_audit_inlog.sql in Supabase." : error.message;
+        return;
+      }
+      dossier.inlog = data?.inlog || [];
+      dossier.handelingen = data?.handelingen || [];
+      dossier.ip_zichtbaar = Boolean(data?.ip_zichtbaar);
+      dossier.auditFout = "";
+    }
+
+    function noteerInlog(token, email) {
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      void fetch("/.netlify/functions/inlog", { method: "POST", headers, body: JSON.stringify({ bron: "systeem", email: email || "" }) });
     }
 
     async function token() {
@@ -142,9 +229,15 @@
         return;
       }
       if (tab === "audit") {
-        const { data, error } = await sb.rpc("boa_audit_lijst");
-        audit = data || [];
-        if (error) fout = error.message;
+        const { data, error } = await sb.rpc("boa_overzicht", {
+          p_bron: bronF,
+          p_soort: soortF,
+          p_niveau: niveauF,
+          p_dagen: Number(dagenF),
+          p_q: qF,
+        });
+        if (error) fout = error.message.includes("function") ? "Draai migrations/0005_audit_inlog.sql in Supabase." : error.message;
+        else overzicht = data || overzicht;
       }
       app.innerHTML = schil();
       bind();
@@ -155,12 +248,15 @@
         e.preventDefault();
         const f = new FormData(e.target);
         fout = "";
-        const { data, error } = await sb.auth.signInWithPassword({ email: String(f.get("email")).trim(), password: String(f.get("password")) });
+        const email = String(f.get("email")).trim();
+        const { data, error } = await sb.auth.signInWithPassword({ email, password: String(f.get("password")) });
         if (error || !data.session) {
+          noteerInlog("", email);
           fout = error ? "Aanmelden lukt niet." : "Sessie niet opgeslagen.";
           teken();
           return;
         }
+        noteerInlog(data.session.access_token, "");
         await vernieuw();
         if (!ik && !fout) fout = "Aangemeld, maar het dossier is niet geladen.";
         teken();
@@ -184,6 +280,7 @@
         fout = error ? error.message : "";
         dossier = data;
         melding = "";
+        await laad30();
         teken();
       });
       document.getElementById("glas-aan")?.addEventListener("change", (e) => { glas = e.target.checked; teken(); });
@@ -194,6 +291,7 @@
         fout = error ? error.message : "";
         dossier = data;
         glas = true;
+        await laad30();
         teken();
       });
       document.getElementById("reset")?.addEventListener("click", async () => {
@@ -226,6 +324,29 @@
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { fout = body.fout || "Aanmaken lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; }
         else { fout = ""; melding = `Medewerker ${body.pv_naam} · ${body.client_id} (${body.rol}). Dit account kan in op de servicedesk.`; e.target.reset(); }
+        teken();
+      });
+      document.getElementById("filter")?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        bronF = String(f.get("bron") || "");
+        soortF = String(f.get("soort") || "");
+        niveauF = String(f.get("niveau") || "");
+        dagenF = String(f.get("dagen") || "30");
+        qF = String(f.get("q") || "");
+        teken();
+      });
+      document.getElementById("email")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const res = await fetch("/.netlify/functions/email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ client_id: dossier.client_id, email: f.get("email"), reden: f.get("reden") }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "Het adres is niet gewijzigd."; melding = ""; }
+        else { fout = ""; melding = "Het zakelijke adres is gewijzigd en als kritieke wijziging gelogd. Het adres blijft buiten beeld."; e.target.reset(); }
         teken();
       });
     }
