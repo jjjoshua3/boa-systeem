@@ -43,49 +43,45 @@
     const app = document.querySelector("#app");
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&" + "amp;", "<": "&" + "lt;", ">": "&" + "gt;", '"': "&" + "quot;", "'": "&" + "#39;"}[c]));
     let ik = null, tab = "zoek", dossier = null, overzicht = { inlog: [], register: [], ip_zichtbaar: false }, fout = "", melding = "", glas = false;
-    let totp = null;
+    let factor = null, mfaLet = "";
     let bronF = "", soortF = "", niveauF = "", dagenF = "30", qF = "";
+    const query = new URLSearchParams(location.search);
+    let voorafSleutel = String(query.get("client") || "").toUpperCase();
+    let voorafReden = query.get("van") ? `Behandeling ticket ${query.get("van")}` : "";
 
-    async function tweedeStap() {
-      const niveau = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (niveau.error) return "uit";
-      if (niveau.data.currentLevel === "aal2") return "klaar";
+    async function vraagFactor(naam) {
+      if (sessionStorage.getItem(`boa-ok-${naam}`) === "1") return "klaar";
       const lijst = await sb.auth.mfa.listFactors();
       if (lijst.error) return "uit";
-      const bevestigd = (lijst.data?.totp || []).filter((f) => f.status === "verified");
-      if (bevestigd[0]) { totp = { modus: "code", factorId: bevestigd[0].id, qr: "", geheim: "" }; return "wacht"; }
-      for (const factor of lijst.data?.all || []) {
-        if (factor.status !== "verified") await sb.auth.mfa.unenroll({ factorId: factor.id });
+      const verified = (lijst.data?.totp || []).filter((f) => f.status === "verified" && (naam === "beheer" ? f.friendly_name === "beheer" : !f.friendly_name || f.friendly_name === "portaal" || f.friendly_name === "BOA Portaal"));
+      if (verified[0]) return { naam, modus: "code", factorId: verified[0].id, qr: "", geheim: "" };
+      for (const f of lijst.data?.all || []) {
+        if (f.status === "verified") continue;
+        if (naam === "beheer" && f.friendly_name !== "beheer") continue;
+        if (naam === "portaal" && f.friendly_name === "beheer") continue;
+        await sb.auth.mfa.unenroll({ factorId: f.id });
       }
-      const vers = await sb.auth.mfa.enroll({ factorType: "totp", issuer: "BOA Systeem" });
-      if (vers.error || !vers.data?.totp) return "uit";
-      totp = { modus: "setup", factorId: vers.data.id, qr: vers.data.totp.qr_code, geheim: vers.data.totp.secret };
-      return "wacht";
+      const vers = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: naam, issuer: naam === "beheer" ? "BOA Beheer" : "BOA Portaal" });
+      if (vers.error || !vers.data?.totp?.qr_code) return "uit";
+      return { naam, modus: "setup", factorId: vers.data.id, qr: vers.data.totp.qr_code, geheim: vers.data.totp.secret || "" };
     }
 
-    function totpHtml() {
-      const setup = totp.modus === "setup";
-      return `<h1>${setup ? "Authenticator instellen" : "Authenticator"}</h1>
-        <form id="totp" class="kaart">
-          <p>${setup ? "Scan de code met Google Authenticator. Daarna de 6 cijfers. Elke nieuwe aanmelding vraagt dit opnieuw." : "Vul de 6 cijfers uit je authenticator in. Elke nieuwe aanmelding vraagt dit opnieuw."}</p>
-          ${setup && totp.qr ? `<p><img src="${esc(totp.qr)}" alt="QR-code" width="180" height="180"></p>` : ""}
-          ${setup && totp.geheim ? `<p>Lukt scannen niet, typ dan deze sleutel: ${esc(totp.geheim)}</p>` : ""}
-          <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>
-          <button>Bevestigen</button>
-          <p class="fout">${esc(fout)}</p>
-        </form>`;
+    function factorHtml() {
+      const setup = factor.modus === "setup";
+      return `<form id="factor" class="kaart">
+        <h1>${setup ? "Beheer-authenticator instellen" : "Beheer-authenticator"}</h1>
+        <p>${setup ? "Scan de code en noem hem BOA Beheer. Dezelfde code geldt voor dit systeem, de behandelaar op de servicedesk en mail. Niet de code van boaportaal.nl." : "Vul de 6 cijfers van BOA Beheer in. Dezelfde code als bij de behandelaar en op mail. Niet de code van boaportaal.nl."}</p>
+        ${setup && factor.qr ? `<p><img src="${factor.qr}" alt="QR-code voor de beheer-authenticator" width="220" height="220" style="background:#fff;padding:8px"></p>` : ""}
+        ${setup && factor.geheim ? `<p>Lukt scannen niet, typ dan deze sleutel: ${esc(factor.geheim)}</p>` : ""}
+        <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>
+        <button>Bevestigen</button>
+        <p class="fout">${esc(fout)}</p>
+      </form>`;
     }
 
     async function vernieuw() {
       const { data } = await sb.auth.getSession();
-      if (!data.session) { ik = null; totp = null; return; }
-      if (!totp) {
-        const stap = await tweedeStap();
-        if (stap === "wacht") return;
-        if (stap === "uit") {
-          if (!fout) fout = "Tweestaps is nog niet aangezet in het accountsysteem. Zet TOTP aan bij Authentication. Tot die tijd geldt alleen het wachtwoord.";
-        }
-      }
+      if (!data.session) { ik = null; factor = null; return; }
       const { data: prof, error } = await sb.rpc("boa_ik");
       if (error) {
         ik = null;
@@ -101,14 +97,18 @@
       return `<h1>Aanmelden</h1><form id="login" class="kaart">
         <label>Zakelijk adres van de medewerker<input type="email" name="email" required></label>
         <label>Wachtwoord<input type="password" name="password" required></label>
-        <button>Inloggen</button><p class="fout">${esc(fout)}</p></form>`;
+        <button>Inloggen</button><p class="ok">${esc(mfaLet)}</p><p class="fout">${esc(fout)}</p></form>`;
     }
 
     function zoek() {
+      const sleutelWaarde = voorafSleutel;
+      const redenWaarde = voorafReden;
+      voorafSleutel = "";
+      voorafReden = "";
       return `<h1>Dossier opvragen</h1>
         <form id="zoek" class="kaart">
-          <label>Ticketnummer of Client-ID<input name="sleutel" placeholder="M2611-0412 of BP-8492-NL" required pattern="(BP-[0-9]{4}-[A-Za-z]{2}|M[0-9]{4}-[0-9]{4})"></label>
-          <label>Wettelijke/operationele reden van opvraag (verplicht voor het auditlog)<textarea name="reden" required minlength="12" placeholder="Verzoek wachtwoordreset n.a.v. ticket M2611-0412"></textarea></label>
+          <label>Ticketnummer of Client-ID<input name="sleutel" value="${esc(sleutelWaarde)}" placeholder="M2611-0412 of BP-8492-NL" required pattern="(BP-[0-9]{4}-[A-Za-z]{2}|M[0-9]{4}-[0-9]{4})"></label>
+          <label>Wettelijke/operationele reden van opvraag (verplicht voor het auditlog)<textarea name="reden" required minlength="12" placeholder="Verzoek wachtwoordreset n.a.v. ticket M2611-0412">${esc(redenWaarde)}</textarea></label>
           <button id="zoek-knop">Zoeken</button>
         </form>
         ${ik.medewerker ? `<form id="glas" class="kaart"><label><input id="glas-aan" type="checkbox" ${glas ? "checked" : ""}> Zoeken op e-mailadres</label>
@@ -168,6 +168,13 @@
           <label>Nieuw zakelijk adres<input type="email" name="email" required></label>
           <label>Reden<textarea name="reden" required minlength="12" placeholder="Adreswijziging op verzoek van de medewerker, ticket M2611-0412"></textarea></label>
           <button>Adres wijzigen</button>
+        </form>
+        <form id="postbus" style="margin-top:12px">
+          <h3>Postbus koppelen</h3>
+          <p>De loginnaam van mail.boaportaal.nl, zonder @boaportaal.nl. Daarmee deelt deze persoon de beheer-authenticator met systeem, behandelaar en mail.</p>
+          <label>Postbusnaam<input name="postbus" required placeholder="bp-3200-ye" autocapitalize="none" spellcheck="false"></label>
+          <label>Reden<textarea name="reden" required minlength="12" placeholder="Postbus gekoppeld zodat de beheer-authenticator ook voor mail geldt"></textarea></label>
+          <button>Postbus koppelen</button>
         </form>` : ""}
       </div>`;
     }
@@ -187,6 +194,7 @@
         <label>Zakelijk adres (alleen voor het aanmaken, daarna niet meer zichtbaar)<input type="email" name="email" required></label>
         <label>Startwachtwoord<input type="password" name="password" required minlength="12"></label>
         <label>Rol<select name="rol"><option value="support">Support (1e lijn)</option><option value="beheerder">Beheerder (2e lijn)</option></select></label>
+        <label>Postbusnaam, leeg = Client-ID<input name="postbus" placeholder="joshua.bosma" autocapitalize="none" spellcheck="false"></label>
         <button>Medewerker aanmaken</button>
       </form>` : "";
       return `${portaal}${staf}<p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
@@ -250,6 +258,7 @@
         <button class="sec" id="uit">Afmelden ${esc(ik.client_id)}</button>
       </div>
       <p>${esc(ik.rol)} · ${esc(ik.pv_naam)} · ${esc(ik.client_id)}</p>
+      ${mfaLet ? `<p class="ok">${esc(mfaLet)}</p>` : ""}
       ${tab==="zoek" ? zoek() : tab==="mensen" ? medewerkers() : auditHtml()}`;
     }
 
@@ -280,7 +289,7 @@
     }
 
     async function teken() {
-      if (totp) { app.innerHTML = totpHtml(); bind(); return; }
+      if (factor) { app.innerHTML = factorHtml(); bind(); return; }
       if (!ik) { app.innerHTML = login(); bind(); return; }
       if (!ik.medewerker) {
         app.innerHTML = `<div class="kaart"><h1>Geen toegang</h1><p>${esc(ik.pv_naam)} ${esc(ik.client_id)} is geen medewerker. Een hoofdbeheerder maakt het account aan.</p><button id="uit">Afmelden</button></div>`;
@@ -330,28 +339,16 @@
           teken();
           return;
         }
-        totp = null;
-        await vernieuw();
-        if (totp) { teken(); return; }
+        sessionStorage.removeItem("boa-ok-beheer");
+        const uit = await vraagFactor("beheer");
+        if (uit === "uit") mfaLet = "Tweestaps is nog niet aangezet in het accountsysteem. Zet TOTP aan bij Authentication, onder Multi-Factor. Tot die tijd geldt alleen het wachtwoord.";
+        else if (uit !== "klaar") { factor = uit; fout = ""; teken(); return; }
         noteerInlog(data.session.access_token, "");
+        await vernieuw();
         if (!ik && !fout) fout = "Aangemeld, maar het dossier is niet geladen.";
         teken();
       });
-      document.getElementById("totp")?.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const code = String(new FormData(e.target).get("code") || "").replace(/\s/g, "");
-        fout = "";
-        const uitdaging = await sb.auth.mfa.challenge({ factorId: totp.factorId });
-        if (uitdaging.error) { fout = "De code kon niet worden gevraagd."; teken(); return; }
-        const check = await sb.auth.mfa.verify({ factorId: totp.factorId, challengeId: uitdaging.data.id, code });
-        if (check.error) { fout = "Die code klopt niet."; teken(); return; }
-        totp = null;
-        const sessie = await sb.auth.getSession();
-        noteerInlog(sessie.data.session?.access_token || "", "");
-        await vernieuw();
-        teken();
-      });
-      document.getElementById("uit")?.addEventListener("click", async () => { await sb.auth.signOut(); ik = null; dossier = null; teken(); });
+      document.getElementById("uit")?.addEventListener("click", async () => { sessionStorage.removeItem("boa-ok-beheer"); await sb.auth.signOut(); ik = null; dossier = null; factor = null; teken(); });
       document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; fout = ""; melding = ""; teken(); }));
       const form = document.getElementById("zoek");
       const knop = document.getElementById("zoek-knop");
@@ -422,7 +419,7 @@
         const res = await fetch("/.netlify/functions/medewerker", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
-          body: JSON.stringify({ pv_naam: f.get("pv_naam"), email: f.get("email"), password: f.get("password"), rol: f.get("rol") }),
+          body: JSON.stringify({ pv_naam: f.get("pv_naam"), email: f.get("email"), password: f.get("password"), rol: f.get("rol"), postbus: f.get("postbus") }),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { fout = body.fout || "Aanmaken lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; }
@@ -469,9 +466,43 @@
         else { fout = ""; melding = "Het zakelijke adres is gewijzigd en als kritieke wijziging gelogd. Het adres blijft buiten beeld."; e.target.reset(); }
         teken();
       });
+      document.getElementById("postbus")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const res = await fetch("/.netlify/functions/postbus", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ client_id: dossier.client_id, postbus: f.get("postbus"), reden: f.get("reden") }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "De postbus is niet gekoppeld."; melding = ""; }
+        else { fout = ""; melding = `Postbus ${body.postbus} is gekoppeld. De beheer-authenticator geldt nu ook voor die mail.`; e.target.reset(); }
+        teken();
+      });
+      document.getElementById("factor")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const code = String(new FormData(e.target).get("code") || "").replace(/\s/g, "");
+        const uitdaging = await sb.auth.mfa.challenge({ factorId: factor.factorId });
+        if (uitdaging.error || !uitdaging.data) { fout = "De code kon niet worden gevraagd. Probeer het opnieuw."; teken(); return; }
+        const check = await sb.auth.mfa.verify({ factorId: factor.factorId, challengeId: uitdaging.data.id, code });
+        if (check.error) { fout = "Die code klopt niet."; teken(); return; }
+        sessionStorage.setItem("boa-ok-beheer", "1");
+        factor = null;
+        fout = "";
+        mfaLet = "";
+        const sessie = await sb.auth.getSession();
+        noteerInlog(sessie.data.session?.access_token || "", "");
+        await vernieuw();
+        teken();
+      });
     }
 
     await vernieuw();
+    if (ik) {
+      const uit = await vraagFactor("beheer");
+      if (uit === "uit") mfaLet = "Tweestaps is nog niet aangezet in het accountsysteem. Zet TOTP aan bij Authentication, onder Multi-Factor. Tot die tijd geldt alleen het wachtwoord.";
+      else if (uit !== "klaar") factor = uit;
+    }
     teken();
   </script>
 </body>

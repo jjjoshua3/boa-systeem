@@ -28,7 +28,9 @@ export default async (request) => {
   const password = String(body.password || "");
   const rol = body.rol === "beheerder" ? "beheerder" : "support";
   const pv = naarPv(body.pv_naam);
+  const postbus = String(body.postbus || "").trim().toLowerCase();
   if (!email.includes("@") || password.length < 12 || pv.length < 3) return json({ fout: "Gegevens onvolledig." }, 400);
+  if (postbus && !/^[a-z0-9][a-z0-9._-]{0,62}$/.test(postbus)) return json({ fout: "De postbusnaam mag alleen letters, cijfers, een punt of een streepje." }, 400);
   const gemaakt = await poort.sb.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { naam: pv, rol } });
   if (gemaakt.error || !gemaakt.data.user) return json({ fout: gemaakt.error?.message || "Account niet aangemaakt." }, 400);
   let cid = clientId();
@@ -40,6 +42,9 @@ export default async (request) => {
   }
   const { error: medFout } = await poort.sb.from("boa_medewerker").insert({ user_id: gemaakt.data.user.id, client_id: cid, pv_naam: pv, rol });
   if (medFout) return json({ fout: "Medewerkersrol niet gekoppeld." }, 500);
+  await poort.sb.auth.admin.updateUserById(gemaakt.data.user.id, {
+    user_metadata: { naam: pv, rol, mail_local: postbus || cid.toLowerCase(), client_id: cid },
+  });
   await poort.sb.from("boa_audit").insert({
     beheerder_id: poort.med.client_id,
     beheerder_naam: "hoofdbeheerder",
