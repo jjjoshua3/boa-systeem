@@ -73,7 +73,7 @@
           <label>Wettelijke/operationele reden van opvraag (verplicht voor het auditlog)<textarea name="reden" required minlength="12" placeholder="Verzoek wachtwoordreset n.a.v. ticket M2611-0412"></textarea></label>
           <button id="zoek-knop">Zoeken</button>
         </form>
-        ${ik.rol === "beheerder" ? `<form id="glas" class="kaart"><label><input id="glas-aan" type="checkbox" ${glas ? "checked" : ""}> Nood-opvraag op e-mailadres</label>
+        ${ik.medewerker ? `<form id="glas" class="kaart"><label><input id="glas-aan" type="checkbox" ${glas ? "checked" : ""}> Zoeken op e-mailadres</label>
           ${glas ? `<p>HIGH ALERT. Deze opvraag schrijft een zware regel in het auditregister. Het adres komt niet terug in het dossier.</p><label>Zakelijk adres<input type="email" name="email" required></label><label>Reden<textarea name="reden" required minlength="12"></textarea></label><button>Nood-opvraag uitvoeren</button>` : ""}</form>` : ""}
         ${dossier ? dossierHtml() : ""}
         <p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
@@ -135,15 +135,23 @@
     }
 
     function medewerkers() {
-      if (ik.rol !== "beheerder") return `<div class="kaart">Alleen een hoofdbeheerder maakt medewerkers aan. Die accounts krijgen daarmee recht op de servicedesk.</div>`;
-      return `<h1>Medewerker aanmaken</h1><form id="medewerker" class="kaart">
+      const portaal = `<h1>Account voor boaportaal.nl</h1>
+        <form id="gebruiker" class="kaart">
+          <p>Support en de hoofdbeheerder. Dit account kan in op boaportaal.nl. Het krijgt geen recht op de servicedesk.</p>
+          <label>PV-naam<input name="pv_naam" placeholder="DE VRIES, M.A." required></label>
+          <label>Zakelijk adres (alleen voor het aanmaken, daarna niet meer zichtbaar)<input type="email" name="email" required></label>
+          <label>Startwachtwoord<input type="password" name="password" required minlength="12"></label>
+          <button>Account aanmaken</button>
+        </form>`;
+      const staf = ik.rol === "beheerder" ? `<h2>Medewerker voor de servicedesk</h2><form id="medewerker" class="kaart">
+        <p>Alleen de hoofdbeheerder. Dit account krijgt een rol op de servicedesk en in dit systeem.</p>
         <label>PV-naam<input name="pv_naam" placeholder="DE VRIES, M.A." required></label>
         <label>Zakelijk adres (alleen voor het aanmaken, daarna niet meer zichtbaar)<input type="email" name="email" required></label>
         <label>Startwachtwoord<input type="password" name="password" required minlength="12"></label>
         <label>Rol<select name="rol"><option value="support">Support (1e lijn)</option><option value="beheerder">Beheerder (2e lijn)</option></select></label>
-        <button>Account aanmaken</button>
-        <p>Het resultaat toont alleen PV-naam en Client-ID. Het adres wordt niet teruggegeven.</p>
-      </form><p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
+        <button>Medewerker aanmaken</button>
+      </form>` : "";
+      return `${portaal}${staf}<p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
     }
 
     function auditHtml() {
@@ -195,7 +203,7 @@
     function schil() {
       return `<div class="rij tabs">
         <button class="sec ${tab==="zoek"?"aan":""}" data-tab="zoek">Opvragen</button>
-        <button class="sec ${tab==="mensen"?"aan":""}" data-tab="mensen">Medewerkers</button>
+        <button class="sec ${tab==="mensen"?"aan":""}" data-tab="mensen">Accounts</button>
         <button class="sec ${tab==="audit"?"aan":""}" data-tab="audit">Audit</button>
         <button class="sec" id="uit">Afmelden ${esc(ik.client_id)}</button>
       </div>
@@ -334,6 +342,19 @@
         await fetch("/.netlify/functions/ban", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` }, body: JSON.stringify({ client_id: dossier.client_id, locked }) });
         dossier = data;
         melding = locked ? "Account vergrendeld en als kritieke wijziging gelogd." : "Account ontgrendeld en als kritieke wijziging gelogd.";
+        teken();
+      });
+      document.getElementById("gebruiker")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const res = await fetch("/.netlify/functions/gebruiker", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ pv_naam: f.get("pv_naam"), email: f.get("email"), password: f.get("password") }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "Aanmaken lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; }
+        else { fout = ""; melding = `Account ${body.pv_naam} · ${body.client_id}. Dit account kan in op boaportaal.nl, niet op de servicedesk.`; e.target.reset(); }
         teken();
       });
       document.getElementById("medewerker")?.addEventListener("submit", async (e) => {
