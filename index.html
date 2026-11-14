@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Systeembeheer & audit | BOA Portaal</title>
+  <style>
+    :root { --navy:#0b1220; --actie:#1d4ed8; --veld:#0f172a; --kaart:#111827; --lijn:#334155; --tekst:#e5e7eb; --muted:#94a3b8; --warn:#fbbf24; --crit:#fca5a5; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:14px/1.45 ui-monospace, "Segoe UI", sans-serif; background:var(--veld); color:var(--tekst); }
+    header { background:#020617; border-bottom:1px solid var(--lijn); padding:14px 18px; }
+    header strong { letter-spacing:.06em; }
+    main { max-width:980px; margin:0 auto; padding:18px 14px 48px; }
+    h1 { font-size:20px; margin:0 0 8px; }
+    .kaart { background:var(--kaart); border:1px solid var(--lijn); padding:14px; margin-top:12px; }
+    label { display:grid; gap:4px; margin-bottom:10px; color:var(--muted); font-size:12px; }
+    input, select, textarea { font:inherit; color:var(--tekst); background:#020617; border:1px solid var(--lijn); padding:8px; width:100%; }
+    textarea { min-height:80px; }
+    .rij { display:flex; flex-wrap:wrap; gap:8px; }
+    button { font:inherit; cursor:pointer; background:var(--actie); color:#fff; border:0; padding:8px 12px; }
+    button.sec { background:transparent; border:1px solid var(--lijn); color:var(--tekst); }
+    button:disabled { opacity:.4; cursor:not-allowed; }
+    .balk { background:#7f1d1d; color:#fff; padding:12px; border:1px solid #fecaca; }
+    .meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; }
+    .meta div { border:1px solid var(--lijn); padding:8px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { border:1px solid var(--lijn); padding:6px; text-align:left; vertical-align:top; }
+    .fout { color:var(--crit); } .ok { color:#86efac; }
+    .tabs button.aan { outline:2px solid #fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>SYSTEEMBEHEER & AUDIT | BOA PORTAAL</strong>
+    <div style="color:#94a3b8;font-size:12px">Zoeken op ticket of Client-ID. E-mail blijft standaard dicht. Kluisinhoud is niet leesbaar.</div>
+  </header>
+  <main id="app"></main>
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+    const URL = "https://ofzyqwpztohflxdhqgbb.supabase.co";
+    const KEY = "sb_publishable_x8nU8ype6b1KOL6K8lS2Iw_DDjz4Olr";
+    const sb = createClient(URL, KEY);
+    const app = document.querySelector("#app");
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&" + "amp;", "<": "&" + "lt;", ">": "&" + "gt;", '"': "&" + "quot;", "'": "&" + "#39;"}[c]));
+    let ik = null, tab = "zoek", dossier = null, audit = [], fout = "", melding = "", glas = false;
+
+    async function vernieuw() {
+      const { data } = await sb.auth.getSession();
+      if (!data.session) { ik = null; return; }
+      const { data: prof, error } = await sb.rpc("boa_ik");
+      ik = error ? null : prof;
+      if (error) fout = error.message;
+    }
+
+    function login() {
+      return `<h1>Aanmelden</h1><form id="login" class="kaart">
+        <label>Zakelijk adres van de medewerker<input type="email" name="email" required></label>
+        <label>Wachtwoord<input type="password" name="password" required></label>
+        <button>Inloggen</button><p class="fout">${esc(fout)}</p></form>`;
+    }
+
+    function zoek() {
+      return `<h1>Dossier opvragen</h1>
+        <form id="zoek" class="kaart">
+          <label>Ticketnummer of Client-ID<input name="sleutel" placeholder="M2611-0412 of BP-8492-NL" required pattern="(BP-[0-9]{4}-[A-Za-z]{2}|M[0-9]{4}-[0-9]{4})"></label>
+          <label>Wettelijke/operationele reden van opvraag (verplicht voor het auditlog)<textarea name="reden" required minlength="12" placeholder="Verzoek wachtwoordreset n.a.v. ticket M2611-0412"></textarea></label>
+          <button id="zoek-knop">Zoeken</button>
+        </form>
+        ${ik.rol === "beheerder" ? `<form id="glas" class="kaart"><label><input id="glas-aan" type="checkbox" ${glas ? "checked" : ""}> Nood-opvraag op e-mailadres (zwaar gelogd)</label>
+          ${glas ? `<p>HIGH ALERT. Deze opvraag schrijft een zware regel in het auditregister. Het adres komt niet terug in het dossier.</p><label>Zakelijk adres<input type="email" name="email" required></label><label>Reden<textarea name="reden" required minlength="12"></textarea></label><button>Nood-opvraag uitvoeren</button>` : ""}</form>` : ""}
+        ${dossier ? dossierHtml() : ""}
+        <p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
+    }
+
+    function dossierHtml() {
+      const d = dossier;
+      const items = d.kluis || {};
+      const regels = Object.entries(items);
+      const totaal = regels.reduce((n, [, a]) => n + Number(a), 0);
+      return `<div class="balk">LET OP: Deze inzage op dossier [${esc(d.client_id)} | ${esc(d.pv_naam)}] is op ${esc(d.moment)} geregistreerd in het auditlogboek op naam van [${esc(d.beheerder)}] met reden: '${esc(d.reden)}'.</div>
+        <div class="kaart"><h2>${esc(d.pv_naam)} · ${esc(d.client_id)}</h2>
+          <p>Organisatie: ${esc(d.organisatie || "—")} · Status account: ${d.locked ? "LOCKED" : "ACTIEF"}</p>
+          <h3>Persoonlijke versleutelde kluis (zero-knowledge)</h3>
+          <div class="meta">
+            <div>Status kluis<br><b>ACTIEF & VERSLEUTELD (AES-256-GCM)</b></div>
+            <div>Bevat items<br><b>${totaal ? `Ja (${regels.map(([k,a]) => `${a} ${esc(k)}`).join(", ")})` : "Geen items"}</b></div>
+            <div>Laatste synchronisatie<br><b>${d.laatste_sync ? esc(new Date(d.laatste_sync).toLocaleString("nl-NL")) : "—"}</b></div>
+            <div>Inhoud<br><b>AFGESCHERMD — GEEN SLEUTELTOEGANG VOOR BEHEER</b></div>
+          </div>
+          <div class="rij" style="margin-top:12px">
+            <button id="reset" type="button">Automatische wachtwoord-reset versturen</button>
+            ${ik.rol === "beheerder" ? `<button id="lock" type="button" class="sec">${d.locked ? "Account ontgrendelen" : "Account vergrendelen"}</button>` : `<button class="sec" disabled>Fysiek wachtwoord / ontgrendelen (alleen hoofdbeheerder)</button>`}
+          </div>
+        </div>`;
+    }
+
+    function medewerkers() {
+      if (ik.rol !== "beheerder") return `<div class="kaart">Alleen een hoofdbeheerder maakt medewerkers aan. Die accounts krijgen daarmee recht op de servicedesk.</div>`;
+      return `<h1>Medewerker aanmaken</h1><form id="medewerker" class="kaart">
+        <label>PV-naam<input name="pv_naam" placeholder="DE VRIES, M.A." required></label>
+        <label>Zakelijk adres (alleen voor het aanmaken, daarna niet meer zichtbaar)<input type="email" name="email" required></label>
+        <label>Startwachtwoord<input type="password" name="password" required minlength="12"></label>
+        <label>Rol<select name="rol"><option value="support">Support (1e lijn)</option><option value="beheerder">Beheerder (2e lijn)</option></select></label>
+        <button>Account aanmaken</button>
+        <p>Het resultaat toont alleen PV-naam en Client-ID. Het adres wordt niet teruggegeven.</p>
+      </form><p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
+    }
+
+    function auditHtml() {
+      return `<h1>Audit-overzicht</h1><table><thead><tr><th>Moment</th><th>Beheerder</th><th>Dossier</th><th>Ticket</th><th>Soort</th><th>Niveau</th><th>Reden</th></tr></thead><tbody>
+        ${audit.map((a) => `<tr><td>${esc(new Date(a.moment).toLocaleString("nl-NL"))}</td><td>${esc(a.beheerder_naam)} ${esc(a.beheerder_id)}</td><td>${esc(a.doel_pv_naam)} ${esc(a.doel_client_id)}</td><td>${esc(a.ticketnummer)}</td><td>${esc(a.soort)}</td><td>${esc(a.niveau)}</td><td>${esc(a.reden)}</td></tr>`).join("")}
+      </tbody></table>`;
+    }
+
+    function schil() {
+      return `<div class="rij tabs">
+        <button class="sec ${tab==="zoek"?"aan":""}" data-tab="zoek">Opvragen</button>
+        <button class="sec ${tab==="mensen"?"aan":""}" data-tab="mensen">Medewerkers</button>
+        <button class="sec ${tab==="audit"?"aan":""}" data-tab="audit">Audit</button>
+        <button class="sec" id="uit">Afmelden ${esc(ik.client_id)}</button>
+      </div>
+      <p>${esc(ik.rol)} · ${esc(ik.pv_naam)} · ${esc(ik.client_id)}</p>
+      ${tab==="zoek" ? zoek() : tab==="mensen" ? medewerkers() : auditHtml()}`;
+    }
+
+    async function token() {
+      const { data } = await sb.auth.getSession();
+      return data.session?.access_token || "";
+    }
+
+    async function teken() {
+      if (!ik) { app.innerHTML = login(); bind(); return; }
+      if (!ik.medewerker) {
+        app.innerHTML = `<div class="kaart"><h1>Geen toegang</h1><p>${esc(ik.pv_naam)} ${esc(ik.client_id)} is geen medewerker. Een hoofdbeheerder maakt het account aan.</p><button id="uit">Afmelden</button></div>`;
+        document.getElementById("uit").onclick = async () => { await sb.auth.signOut(); ik = null; teken(); };
+        return;
+      }
+      if (tab === "audit") {
+        const { data, error } = await sb.rpc("boa_audit_lijst");
+        audit = data || [];
+        if (error) fout = error.message;
+      }
+      app.innerHTML = schil();
+      bind();
+    }
+
+    function bind() {
+      document.getElementById("login")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const { error } = await sb.auth.signInWithPassword({ email: String(f.get("email")), password: String(f.get("password")) });
+        fout = error ? "Aanmelden lukt niet." : "";
+        await vernieuw();
+        teken();
+      });
+      document.getElementById("uit")?.addEventListener("click", async () => { await sb.auth.signOut(); ik = null; dossier = null; teken(); });
+      document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; fout = ""; melding = ""; teken(); }));
+      const form = document.getElementById("zoek");
+      const knop = document.getElementById("zoek-knop");
+      const sync = () => {
+        if (!form || !knop) return;
+        const sleutel = form.sleutel.value.trim();
+        const reden = form.reden.value.trim();
+        knop.disabled = reden.length < 12 || !/^(BP-\d{4}-[A-Za-z]{2}|M\d{4}-\d{4})$/i.test(sleutel);
+      };
+      form?.addEventListener("input", sync);
+      sync();
+      form?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(form);
+        const { data, error } = await sb.rpc("boa_zoek_account", { p_sleutel: String(f.get("sleutel")).toUpperCase(), p_reden: f.get("reden") });
+        fout = error ? error.message : "";
+        dossier = data;
+        melding = "";
+        teken();
+      });
+      document.getElementById("glas-aan")?.addEventListener("change", (e) => { glas = e.target.checked; teken(); });
+      document.getElementById("glas")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const { data, error } = await sb.rpc("boa_nood_email", { p_email: f.get("email"), p_reden: f.get("reden") });
+        fout = error ? error.message : "";
+        dossier = data;
+        glas = true;
+        teken();
+      });
+      document.getElementById("reset")?.addEventListener("click", async () => {
+        const { data, error } = await sb.rpc("boa_reset_aanvragen", { p_client_id: dossier.client_id, p_reden: dossier.reden });
+        if (error) { fout = error.message; teken(); return; }
+        const res = await fetch("/.netlify/functions/reset", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` }, body: JSON.stringify({ verzoek: data.verzoek }) });
+        const body = await res.json().catch(() => ({}));
+        melding = res.ok ? "Herstel is aangevraagd. Het systeem mailt het geverifieerde adres. Dat adres is niet zichtbaar." : (body.fout || "Het verzoek staat in het auditlog. De mailfunctie is nog niet gekoppeld.");
+        fout = "";
+        teken();
+      });
+      document.getElementById("lock")?.addEventListener("click", async () => {
+        const locked = !dossier.locked;
+        const reden = dossier.reden || "Handmatige statuswijziging door hoofdbeheerder";
+        const { data, error } = await sb.rpc("boa_account_locked", { p_client_id: dossier.client_id, p_locked: locked, p_reden: reden });
+        if (error) { fout = error.message; teken(); return; }
+        await fetch("/.netlify/functions/ban", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` }, body: JSON.stringify({ client_id: dossier.client_id, locked }) });
+        dossier = data;
+        melding = locked ? "Account vergrendeld en als kritieke wijziging gelogd." : "Account ontgrendeld en als kritieke wijziging gelogd.";
+        teken();
+      });
+      document.getElementById("medewerker")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const res = await fetch("/.netlify/functions/medewerker", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ pv_naam: f.get("pv_naam"), email: f.get("email"), password: f.get("password"), rol: f.get("rol") }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "Aanmaken lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; }
+        else { fout = ""; melding = `Medewerker ${body.pv_naam} · ${body.client_id} (${body.rol}). Dit account kan in op de servicedesk.`; e.target.reset(); }
+        teken();
+      });
+    }
+
+    await vernieuw();
+    teken();
+  </script>
+</body>
+</html>
