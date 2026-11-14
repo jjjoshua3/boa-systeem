@@ -43,11 +43,52 @@
     const app = document.querySelector("#app");
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&" + "amp;", "<": "&" + "lt;", ">": "&" + "gt;", '"': "&" + "quot;", "'": "&" + "#39;"}[c]));
     let ik = null, tab = "zoek", dossier = null, overzicht = { inlog: [], register: [], ip_zichtbaar: false }, fout = "", melding = "", glas = false;
+    let totp = null;
     let bronF = "", soortF = "", niveauF = "", dagenF = "30", qF = "";
+
+    async function tweedeStap() {
+      const niveau = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (niveau.error) return "uit";
+      if (niveau.data.currentLevel === "aal2") return "klaar";
+      const lijst = await sb.auth.mfa.listFactors();
+      if (lijst.error) return "uit";
+      const bevestigd = (lijst.data?.totp || []).filter((f) => f.status === "verified");
+      if (bevestigd[0]) { totp = { modus: "code", factorId: bevestigd[0].id, qr: "", geheim: "" }; return "wacht"; }
+      for (const factor of lijst.data?.all || []) {
+        if (factor.status !== "verified") await sb.auth.mfa.unenroll({ factorId: factor.id });
+      }
+      const vers = await sb.auth.mfa.enroll({ factorType: "totp", issuer: "BOA Systeem" });
+      if (vers.error || !vers.data?.totp) return "uit";
+      totp = { modus: "setup", factorId: vers.data.id, qr: vers.data.totp.qr_code, geheim: vers.data.totp.secret };
+      return "wacht";
+    }
+
+    function totpHtml() {
+      const setup = totp.modus === "setup";
+      return `<h1>${setup ? "Authenticator instellen" : "Authenticator"}</h1>
+        <form id="totp" class="kaart">
+          <p>${setup ? "Scan de code met Google Authenticator. Daarna de 6 cijfers. Elke nieuwe aanmelding vraagt dit opnieuw." : "Vul de 6 cijfers uit je authenticator in. Elke nieuwe aanmelding vraagt dit opnieuw."}</p>
+          ${setup && totp.qr ? `<p><img src="${esc(totp.qr)}" alt="QR-code" width="180" height="180"></p>` : ""}
+          ${setup && totp.geheim ? `<p>Lukt scannen niet, typ dan deze sleutel: ${esc(totp.geheim)}</p>` : ""}
+          <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>
+          <button>Bevestigen</button>
+          <p class="fout">${esc(fout)}</p>
+        </form>`;
+    }
 
     async function vernieuw() {
       const { data } = await sb.auth.getSession();
-      if (!data.session) { ik = null; return; }
+      if (!data.session) { ik = null; totp = null; return; }
+      if (!totp) {
+        const stap = await tweedeStap();
+        if (stap === "wacht") return;
+        if (stap === "uit") {
+          await sb.auth.signOut();
+          ik = null;
+          fout = "Tweestaps is nog niet aangezet in het accountsysteem. Zet TOTP aan bij Authentication en log opnieuw in.";
+          return;
+        }
+      }
       const { data: prof, error } = await sb.rpc("boa_ik");
       if (error) {
         ik = null;
@@ -167,12 +208,16 @@
               ${opt("portaal", "boaportaal.nl", bronF)}
               ${opt("servicedesk", "servicedesk.boaportaal.nl", bronF)}
               ${opt("systeem", "systeem.boaportaal.nl", bronF)}
+              ${opt("mail", "mail.boaportaal.nl", bronF)}
             </select></label>
             <label>Soort<select name="soort">
               ${opt("", "Alle soorten", soortF)}
               ${opt("INZAGE", "Inzage", soortF)}
               ${opt("BREAK_GLASS", "Nood-opvraag", soortF)}
               ${opt("CRITICAL_AUTH_CHANGE", "Auth-wijziging", soortF)}
+              ${opt("MAIL_VERZONDEN", "Mail verzonden", soortF)}
+              ${opt("MAIL_CLAIM", "Mail geclaimd", soortF)}
+              ${opt("MAIL_UNCLAIM", "Claim losgelaten", soortF)}
             </select></label>
             <label>Niveau<select name="niveau">
               ${opt("", "Alle niveaus", niveauF)}
@@ -238,6 +283,7 @@
     }
 
     async function teken() {
+      if (totp) { app.innerHTML = totpHtml(); bind(); return; }
       if (!ik) { app.innerHTML = login(); bind(); return; }
       if (!ik.medewerker) {
         app.innerHTML = `<div class="kaart"><h1>Geen toegang</h1><p>${esc(ik.pv_naam)} ${esc(ik.client_id)} is geen medewerker. Een hoofdbeheerder maakt het account aan.</p><button id="uit">Afmelden</button></div>`;
@@ -287,9 +333,25 @@
           teken();
           return;
         }
-        noteerInlog(data.session.access_token, "");
+        totp = null;
         await vernieuw();
+        if (totp) { teken(); return; }
+        noteerInlog(data.session.access_token, "");
         if (!ik && !fout) fout = "Aangemeld, maar het dossier is niet geladen.";
+        teken();
+      });
+      document.getElementById("totp")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const code = String(new FormData(e.target).get("code") || "").replace(/\s/g, "");
+        fout = "";
+        const uitdaging = await sb.auth.mfa.challenge({ factorId: totp.factorId });
+        if (uitdaging.error) { fout = "De code kon niet worden gevraagd."; teken(); return; }
+        const check = await sb.auth.mfa.verify({ factorId: totp.factorId, challengeId: uitdaging.data.id, code });
+        if (check.error) { fout = "Die code klopt niet."; teken(); return; }
+        totp = null;
+        const sessie = await sb.auth.getSession();
+        noteerInlog(sessie.data.session?.access_token || "", "");
+        await vernieuw();
         teken();
       });
       document.getElementById("uit")?.addEventListener("click", async () => { await sb.auth.signOut(); ik = null; dossier = null; teken(); });
