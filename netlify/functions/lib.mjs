@@ -25,9 +25,9 @@ export function json(body, status = 200) {
 }
 
 export async function verstuurUitnodiging({ naar, naam }) {
-  const wachtwoord = process.env.PURELYMAIL_ACCOUNT_PASSWORD;
+  const wachtwoord = process.env.PURELYMAIL_ONBOARDING_PASSWORD;
   if (!wachtwoord) {
-    return { ok: false, fout: "Zet PURELYMAIL_ACCOUNT_PASSWORD op de systeem-site, dezelfde als bij mail. Dan gaat de uitnodiging vanaf account@boaportaal.nl." };
+    return { ok: false, fout: "Zet PURELYMAIL_ONBOARDING_PASSWORD op de Netlify-site van systeem. Dan gaat de uitnodiging vanaf onboarding@boaportaal.nl." };
   }
   const { default: nodemailer } = await import("nodemailer");
   const aanhef = naam ? `Hoi ${naam},` : "Hoi,";
@@ -65,10 +65,10 @@ export async function verstuurUitnodiging({ naar, naam }) {
     host: "smtp.purelymail.com",
     port: 465,
     secure: true,
-    auth: { user: "account@boaportaal.nl", pass: wachtwoord },
+    auth: { user: "onboarding@boaportaal.nl", pass: wachtwoord },
   });
   await smtp.sendMail({
-    from: { name: "BOA Portaal", address: "account@boaportaal.nl" },
+    from: { name: "BOA Portaal", address: "onboarding@boaportaal.nl" },
     to: naar,
     subject: "Uitnodiging voor de medewerkersportalen van BOA Portaal",
     text: tekst,

@@ -106,7 +106,7 @@ export default async (request) => {
     mail = Boolean(verzonden.ok);
     mailFout = verzonden.fout || "";
   } catch {
-    mailFout = "De uitnodiging is niet verstuurd. Controleer het wachtwoord van account@boaportaal.nl op de systeem-site.";
+    mailFout = "De uitnodiging is niet verstuurd. Controleer het wachtwoord van onboarding@boaportaal.nl op de systeem-site.";
   }
   return json({ client_id: ident.client_id, pv_naam: pv, rol, mail, mailFout });
 };
