@@ -52,18 +52,24 @@
     async function vraagFactor(naam) {
       if (sessionStorage.getItem(`boa-ok-${naam}`) === "1") return "klaar";
       const lijst = await sb.auth.mfa.listFactors();
-      if (lijst.error) return "uit";
-      const verified = (lijst.data?.totp || []).filter((f) => f.status === "verified" && (naam === "beheer" ? f.friendly_name === "beheer" : !f.friendly_name || f.friendly_name === "portaal" || f.friendly_name === "BOA Portaal"));
+      if (lijst.error) return { fout: lijst.error.message || "Factoren niet op te vragen." };
+      const past = (f) => naam === "beheer" ? f.friendly_name === "beheer" : !f.friendly_name || f.friendly_name === "portaal" || f.friendly_name === "BOA Portaal";
+      const verified = (lijst.data?.totp || []).filter((f) => f.status === "verified" && past(f));
       if (verified[0]) return { naam, modus: "code", factorId: verified[0].id, qr: "", geheim: "" };
-      for (const f of lijst.data?.all || []) {
-        if (f.status === "verified") continue;
-        if (naam === "beheer" && f.friendly_name !== "beheer") continue;
-        if (naam === "portaal" && f.friendly_name === "beheer") continue;
-        await sb.auth.mfa.unenroll({ factorId: f.id });
-      }
       const vers = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: naam, issuer: naam === "beheer" ? "BOA Beheer" : "BOA Portaal" });
-      if (vers.error || !vers.data?.totp?.qr_code) return "uit";
-      return { naam, modus: "setup", factorId: vers.data.id, qr: vers.data.totp.qr_code, geheim: vers.data.totp.secret || "" };
+      if (vers.data?.totp?.qr_code) return { naam, modus: "setup", factorId: vers.data.id, qr: vers.data.totp.qr_code, geheim: vers.data.totp.secret || "" };
+      const bericht = vers.error?.message || "Geen QR-code van het accountsysteem.";
+      const bestaat = /already|exists|friendly|name/i.test(bericht);
+      if (bestaat) {
+        const open = (lijst.data?.all || []).find((f) => f.status !== "verified" && past(f));
+        if (open) {
+          await sb.auth.mfa.unenroll({ factorId: open.id }).catch(() => null);
+          const opnieuw = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: naam, issuer: naam === "beheer" ? "BOA Beheer" : "BOA Portaal" });
+          if (opnieuw.data?.totp?.qr_code) return { naam, modus: "setup", factorId: opnieuw.data.id, qr: opnieuw.data.totp.qr_code, geheim: opnieuw.data.totp.secret || "" };
+          return { fout: (opnieuw.error?.message || bericht) + " Wacht 5 minuten en probeer opnieuw, of log uit en in." };
+        }
+      }
+      return { fout: bericht };
     }
 
     function factorHtml() {
@@ -341,7 +347,7 @@
         }
         sessionStorage.removeItem("boa-ok-beheer");
         const uit = await vraagFactor("beheer");
-        if (uit === "uit") mfaLet = "Tweestaps is nog niet aangezet in het accountsysteem. Zet TOTP aan bij Authentication, onder Multi-Factor. Tot die tijd geldt alleen het wachtwoord.";
+        if (uit && uit.fout) mfaLet = "Tweestaps kon niet starten: " + uit.fout;
         else if (uit !== "klaar") { factor = uit; fout = ""; teken(); return; }
         noteerInlog(data.session.access_token, "");
         await vernieuw();
@@ -500,7 +506,7 @@
     await vernieuw();
     if (ik) {
       const uit = await vraagFactor("beheer");
-      if (uit === "uit") mfaLet = "Tweestaps is nog niet aangezet in het accountsysteem. Zet TOTP aan bij Authentication, onder Multi-Factor. Tot die tijd geldt alleen het wachtwoord.";
+      if (uit && uit.fout) mfaLet = "Tweestaps kon niet starten: " + uit.fout;
       else if (uit !== "klaar") factor = uit;
     }
     teken();
