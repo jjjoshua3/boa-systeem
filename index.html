@@ -34,15 +34,15 @@
     <strong>SYSTEEMBEHEER & AUDIT | BOA PORTAAL</strong>
     <div style="color:#94a3b8;font-size:12px">Zoeken op ticket of Client-ID. E-mail blijft standaard dicht. Kluisinhoud is niet leesbaar.</div>
   </header>
-  <main id="app"><p style="color:#94a3b8">Bezig met laden…</p></main>
-  <script>
-    setTimeout(() => {
-      const app = document.querySelector("#app");
-      if (app && app.dataset.klaar !== "1") {
-        app.innerHTML = `<div class="kaart"><h1>Aanmelden</h1><p>Het accountsysteem reageert niet. Vernieuw de pagina.</p></div>`;
-      }
-    }, 8000);
-  </script>
+  <main id="app">
+    <h1>Aanmelden</h1>
+    <form id="login" class="kaart">
+      <label>Zakelijk adres van de medewerker<input type="email" name="email" required></label>
+      <label>Wachtwoord<input type="password" name="password" required></label>
+      <button>Inloggen</button>
+      <p class="fout" id="login-fout"></p>
+    </form>
+  </main>
   <script type="module">
     import { createClient } from "/vendor/supabase.js";
     const URL = "https://ofzyqwpztohflxdhqgbb.supabase.co";
@@ -550,27 +550,21 @@
       });
     }
 
-    app.innerHTML = `<p style="color:#94a3b8">Bezig met laden…</p>`;
-    try {
-      await Promise.race([
-        vernieuw(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("tijd")), 4000)),
-      ]);
-    } catch (err) {
-      ik = null;
-      fout = err?.message === "tijd" ? "Het accountsysteem reageert niet. Vernieuw de pagina." : (err?.message || "Laden lukt niet.");
-    }
+    app.dataset.klaar = "1";
     teken();
-    if (ik?.medewerker) {
-      try {
-        const uit = await vraagFactor("beheer");
-        if (uit && uit.fout) mfaLet = "Tweestaps kon niet starten: " + uit.fout;
-        else if (uit !== "klaar") factor = uit;
-      } catch (err) {
-        mfaLet = "Tweestaps kon niet starten: " + (err?.message || "onbekend");
+    vernieuw().then(async () => {
+      if (!ik) return;
+      if (ik.medewerker) {
+        try {
+          const uit = await vraagFactor("beheer");
+          if (uit && uit.fout) mfaLet = "Tweestaps kon niet starten: " + uit.fout;
+          else if (uit !== "klaar") factor = uit;
+        } catch (err) {
+          mfaLet = "Tweestaps kon niet starten: " + (err?.message || "onbekend");
+        }
       }
       teken();
-    }
+    }).catch(() => {});
   </script>
 </body>
 </html>
