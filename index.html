@@ -95,9 +95,17 @@
             <div>Inhoud<br><b>AFGESCHERMD — GEEN SLEUTELTOEGANG VOOR BEHEER</b></div>
           </div>
           <div class="rij" style="margin-top:12px">
-            <button id="reset" type="button">Automatische wachtwoord-reset versturen</button>
-            ${ik.rol === "beheerder" ? `<button id="lock" type="button" class="sec">${d.locked ? "Account ontgrendelen" : "Account vergrendelen"}</button>` : `<button class="sec" disabled>Fysiek wachtwoord / ontgrendelen (alleen hoofdbeheerder)</button>`}
+            <button id="reset" type="button">Herstel-link sturen</button>
+            ${ik.rol === "beheerder" ? `<button id="lock" type="button" class="sec">${d.locked ? "Account ontgrendelen" : "Account vergrendelen"}</button>` : ""}
           </div>
+          ${ik.rol === "beheerder" ? `<form id="wachtwoord" style="margin-top:14px">
+            <h3>Wachtwoord direct zetten</h3>
+            <p>De persoon krijgt geen mail. Jij kiest het wachtwoord en geeft het zelf door. Het wachtwoord komt niet in het auditlog.</p>
+            <label>Nieuw wachtwoord<input type="password" name="password" required minlength="12" autocomplete="new-password"></label>
+            <label>Herhaal wachtwoord<input type="password" name="again" required minlength="12" autocomplete="new-password"></label>
+            <label>Reden<textarea name="reden" required minlength="12" placeholder="Balie, medewerker kan de herstelmail niet openen"></textarea></label>
+            <button>Wachtwoord zetten</button>
+          </form>` : `<p>Een herstel-link gaat naar het zakelijke adres. Het adres blijft buiten beeld. Direct een wachtwoord zetten kan alleen de hoofdbeheerder.</p>`}
         </div>
         ${activiteitHtml(d)}`;
     }
@@ -349,6 +357,23 @@
         niveauF = String(f.get("niveau") || "");
         dagenF = String(f.get("dagen") || "30");
         qF = String(f.get("q") || "");
+        teken();
+      });
+      document.getElementById("wachtwoord")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const password = String(f.get("password") || "");
+        const again = String(f.get("again") || "");
+        if (password.length < 12) { fout = "Het wachtwoord moet minimaal 12 tekens zijn."; melding = ""; teken(); return; }
+        if (password !== again) { fout = "De twee wachtwoorden zijn niet gelijk."; melding = ""; teken(); return; }
+        const res = await fetch("/.netlify/functions/wachtwoord", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ client_id: dossier.client_id, password, reden: f.get("reden") }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "Het wachtwoord is niet gezet."; melding = ""; }
+        else { fout = ""; melding = "Het wachtwoord is gezet en als kritieke wijziging gelogd. Het wachtwoord staat niet in het log."; e.target.reset(); }
         teken();
       });
       document.getElementById("email")?.addEventListener("submit", async (e) => {
