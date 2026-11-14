@@ -59,6 +59,10 @@
       const vers = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: naam, issuer: naam === "beheer" ? "BOA Beheer" : "BOA Portaal" });
       if (vers.data?.totp?.qr_code) return { naam, modus: "setup", factorId: vers.data.id, qr: vers.data.totp.qr_code, geheim: vers.data.totp.secret || "" };
       const bericht = vers.error?.message || "Geen QR-code van het accountsysteem.";
+      if (/aal2/i.test(bericht)) {
+        const bestaand = (lijst.data?.totp || []).find((f) => f.status === "verified");
+        if (bestaand) return { naam, modus: "poort", factorId: bestaand.id, qr: "", geheim: "", label: bestaand.friendly_name || "portaal" };
+      }
       const bestaat = /already|exists|friendly|name/i.test(bericht);
       if (bestaat) {
         const open = (lijst.data?.all || []).find((f) => f.status !== "verified" && past(f));
@@ -74,9 +78,16 @@
 
     function factorHtml() {
       const setup = factor.modus === "setup";
+      const poort = factor.modus === "poort";
+      const titel = poort ? "Eerst je portaal-code" : setup ? "Beheer-authenticator instellen" : "Beheer-authenticator";
+      const tekst = poort
+        ? `Je hebt al een authenticator (${esc(factor.label || "portaal")}). Vul die code in. Daarna kun je de beheer-authenticator instellen.`
+        : setup
+          ? "Scan de code en noem hem BOA Beheer. Dezelfde code geldt voor dit systeem, de behandelaar op de servicedesk en mail. Niet de code van boaportaal.nl."
+          : "Vul de 6 cijfers van BOA Beheer in. Dezelfde code als bij de behandelaar en op mail. Niet de code van boaportaal.nl.";
       return `<form id="factor" class="kaart">
-        <h1>${setup ? "Beheer-authenticator instellen" : "Beheer-authenticator"}</h1>
-        <p>${setup ? "Scan de code en noem hem BOA Beheer. Dezelfde code geldt voor dit systeem, de behandelaar op de servicedesk en mail. Niet de code van boaportaal.nl." : "Vul de 6 cijfers van BOA Beheer in. Dezelfde code als bij de behandelaar en op mail. Niet de code van boaportaal.nl."}</p>
+        <h1>${titel}</h1>
+        <p>${tekst}</p>
         ${setup && factor.qr ? `<p><img src="${factor.qr}" alt="QR-code voor de beheer-authenticator" width="220" height="220" style="background:#fff;padding:8px"></p>` : ""}
         ${setup && factor.geheim ? `<p>Lukt scannen niet, typ dan deze sleutel: ${esc(factor.geheim)}</p>` : ""}
         <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>
@@ -488,10 +499,20 @@
       document.getElementById("factor")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const code = String(new FormData(e.target).get("code") || "").replace(/\s/g, "");
+        const poort = factor.modus === "poort";
         const uitdaging = await sb.auth.mfa.challenge({ factorId: factor.factorId });
         if (uitdaging.error || !uitdaging.data) { fout = "De code kon niet worden gevraagd. Probeer het opnieuw."; teken(); return; }
         const check = await sb.auth.mfa.verify({ factorId: factor.factorId, challengeId: uitdaging.data.id, code });
         if (check.error) { fout = "Die code klopt niet."; teken(); return; }
+        if (poort) {
+          factor = null;
+          fout = "";
+          const uit = await vraagFactor("beheer");
+          if (uit && uit.fout) mfaLet = "Tweestaps kon niet starten: " + uit.fout;
+          else if (uit !== "klaar") factor = uit;
+          teken();
+          return;
+        }
         sessionStorage.setItem("boa-ok-beheer", "1");
         factor = null;
         fout = "";
