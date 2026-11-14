@@ -59,10 +59,10 @@
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.fout || "Aanmelden lukt niet.");
-        const { createClient } = await import("/vendor/supabase.js");
-        const sb = createClient("https://ofzyqwpztohflxdhqgbb.supabase.co", "sb_publishable_x8nU8ype6b1KOL6K8lS2Iw_DDjz4Olr");
-        const gezet = await sb.auth.setSession({ access_token: body.access_token, refresh_token: body.refresh_token });
-        if (gezet.error) throw new Error(gezet.error.message);
+        sessionStorage.setItem("boa-login", JSON.stringify({
+          access_token: body.access_token,
+          refresh_token: body.refresh_token,
+        }));
         location.reload();
       } catch (err) {
         fout.textContent = err.message || "Aanmelden lukt niet.";
@@ -136,7 +136,7 @@
       return `<form id="factor" class="kaart">
         <h1>${titel}</h1>
         <p>${tekst}</p>
-        ${bron ? `<p><img src="${bron.replace(/"/g, """)}" alt="QR-code voor de beheer-authenticator" width="220" height="220" style="background:#fff;padding:8px"></p>` : ""}
+        ${bron ? `<p><img src="${bron.replace(/"/g, "&quot;")}" alt="QR-code voor de beheer-authenticator" width="220" height="220" style="background:#fff;padding:8px"></p>` : ""}
         ${setup && factor.geheim ? `<p>Lukt scannen niet, typ dan deze sleutel: ${esc(factor.geheim)}</p>` : ""}
         <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>
         <button>Bevestigen</button>
@@ -558,20 +558,36 @@
     }
 
     app.dataset.klaar = "1";
-    teken();
-    vernieuw().then(async () => {
-      if (!ik) return;
-      if (ik.medewerker) {
-        try {
-          const uit = await vraagFactor("beheer");
-          if (uit && uit.fout) mfaLet = "Tweestaps kon niet starten: " + uit.fout;
-          else if (uit !== "klaar") factor = uit;
-        } catch (err) {
-          mfaLet = "Tweestaps kon niet starten: " + (err?.message || "onbekend");
-        }
+    const vers = sessionStorage.getItem("boa-login");
+    if (vers) {
+      sessionStorage.removeItem("boa-login");
+      try {
+        const tokens = JSON.parse(vers);
+        const gezet = await sb.auth.setSession(tokens);
+        if (gezet.error) fout = gezet.error.message;
+      } catch (err) {
+        fout = err.message || "De sessie kon niet worden gezet.";
       }
-      teken();
-    }).catch(() => {});
+    }
+    try {
+      await Promise.race([
+        vernieuw(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Het accountsysteem reageert niet.")), 6000)),
+      ]);
+    } catch (err) {
+      ik = null;
+      fout = err.message || "Het accountsysteem reageert niet.";
+    }
+    if (ik?.medewerker) {
+      try {
+        const uit = await vraagFactor("beheer");
+        if (uit && uit.fout) mfaLet = "Tweestaps kon niet starten: " + uit.fout;
+        else if (uit !== "klaar") factor = uit;
+      } catch (err) {
+        mfaLet = "Tweestaps kon niet starten: " + (err?.message || "onbekend");
+      }
+    }
+    teken();
   </script>
 </body>
 </html>
