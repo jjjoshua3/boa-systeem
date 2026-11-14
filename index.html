@@ -136,7 +136,7 @@
       voorafReden = "";
       return `<h1>Dossier opvragen</h1>
         <form id="zoek" class="kaart">
-          <label>Ticketnummer of Client-ID<input name="sleutel" value="${esc(sleutelWaarde)}" placeholder="M2611-0412 of BP-8492-NL" required pattern="(BP-[0-9]{4}-[A-Za-z]{2}|M[0-9]{4}-[0-9]{4})"></label>
+          <label>Ticketnummer, Client-ID of anonieme code<input name="sleutel" value="${esc(sleutelWaarde)}" placeholder="M2611-0412, BP-8492-NL of AN-7K3Q9P" required pattern="(BP-[0-9]{4}-[A-Za-z]{2}|M[0-9]{4}-[0-9]{4}|AN-[A-Za-z0-9]{6})"></label>
           <label>Wettelijke/operationele reden van opvraag (verplicht voor het auditlog)<textarea name="reden" required minlength="12" placeholder="Verzoek wachtwoordreset n.a.v. ticket M2611-0412">${esc(redenWaarde)}</textarea></label>
           <button id="zoek-knop">Zoeken</button>
         </form>
@@ -154,6 +154,7 @@
       return `<div class="balk">LET OP: Deze inzage op dossier [${esc(d.client_id)} | ${esc(d.pv_naam)}] is op ${esc(d.moment)} geregistreerd in het auditlogboek op naam van [${esc(d.beheerder)}] met reden: '${esc(d.reden)}'.</div>
         <div class="kaart"><h2>${esc(d.pv_naam)} · ${esc(d.client_id)}</h2>
           <p>Organisatie: ${esc(d.organisatie || "—")} · Status account: ${d.locked ? "LOCKED" : "ACTIEF"}</p>
+          ${d.anon_code ? `<p>Anonieme communitycode ${esc(d.anon_code)} hoort bij dit account. Bericht: ${esc(d.bericht || "—")}${d.geplaatst ? `, geplaatst ${esc(d.geplaatst)}` : ""}.</p>` : ""}
           <h3>Persoonlijke versleutelde kluis (zero-knowledge)</h3>
           <div class="meta">
             <div>Status kluis<br><b>ACTIEF & VERSLEUTELD (AES-256-GCM)</b></div>
@@ -385,14 +386,18 @@
         if (!form || !knop) return;
         const sleutel = form.sleutel.value.trim();
         const reden = form.reden.value.trim();
-        knop.disabled = reden.length < 12 || !/^(BP-\d{4}-[A-Za-z]{2}|M\d{4}-\d{4})$/i.test(sleutel);
+        knop.disabled = reden.length < 12 || !/^(BP-\d{4}-[A-Za-z]{2}|M\d{4}-\d{4}|AN-[A-Za-z0-9]{6})$/i.test(sleutel);
       };
       form?.addEventListener("input", sync);
       sync();
       form?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = new FormData(form);
-        const { data, error } = await sb.rpc("boa_zoek_account", { p_sleutel: String(f.get("sleutel")).toUpperCase(), p_reden: f.get("reden") });
+        const sleutel = String(f.get("sleutel")).trim().toUpperCase();
+        const anoniem = sleutel.startsWith("AN-");
+        const { data, error } = await sb.rpc(anoniem ? "boa_anon_opzoek" : "boa_zoek_account", anoniem
+          ? { p_code: sleutel, p_reden: f.get("reden") }
+          : { p_sleutel: sleutel, p_reden: f.get("reden") });
         fout = error ? error.message : "";
         dossier = data;
         melding = "";
