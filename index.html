@@ -73,7 +73,7 @@
           <label>Wettelijke/operationele reden van opvraag (verplicht voor het auditlog)<textarea name="reden" required minlength="12" placeholder="Verzoek wachtwoordreset n.a.v. ticket M2611-0412"></textarea></label>
           <button id="zoek-knop">Zoeken</button>
         </form>
-        ${ik.rol === "beheerder" ? `<form id="glas" class="kaart"><label><input id="glas-aan" type="checkbox" ${glas ? "checked" : ""}> Nood-opvraag op e-mailadres (zwaar gelogd)</label>
+        ${ik.rol === "beheerder" ? `<form id="glas" class="kaart"><label><input id="glas-aan" type="checkbox" ${glas ? "checked" : ""}> Nood-opvraag op e-mailadres</label>
           ${glas ? `<p>HIGH ALERT. Deze opvraag schrijft een zware regel in het auditregister. Het adres komt niet terug in het dossier.</p><label>Zakelijk adres<input type="email" name="email" required></label><label>Reden<textarea name="reden" required minlength="12"></textarea></label><button>Nood-opvraag uitvoeren</button>` : ""}</form>` : ""}
         ${dossier ? dossierHtml() : ""}
         <p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
@@ -107,7 +107,7 @@
       const inlog = d.inlog || [];
       const hand = d.handelingen || [];
       return `<div class="kaart"><h3>Laatste 30 dagen, audit</h3>
-        <p>Inlogpogingen op boaportaal.nl, servicedesk en dit systeem. ${ip ? "IP-adressen zijn zichtbaar omdat je hoofdbeheerder bent." : "IP-adressen zijn afgeschermd. Alleen een hoofdbeheerder ziet ze."}</p>
+        <p>Inlogpogingen op boaportaal.nl, servicedesk en dit systeem.</p>
         ${d.auditFout ? `<p class="fout">${esc(d.auditFout)}</p>` : ""}
         <table><thead><tr><th>Moment</th><th>Bron</th><th>Uitkomst</th>${ip ? "<th>IP</th>" : ""}</tr></thead><tbody>
           ${inlog.length ? inlog.map((r) => `<tr><td>${esc(new Date(r.moment).toLocaleString("nl-NL"))}</td><td>${esc(r.bron)}</td><td>${esc(r.resultaat)}</td>${ip ? `<td>${esc(r.ip || "—")}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${ip ? 4 : 3}">Geen inlogpogingen in 30 dagen.</td></tr>`}
@@ -172,8 +172,8 @@
             <label>Client-ID of ticket<input name="q" value="${esc(qF)}" placeholder="BP- of M"></label>
           </div>
           <button>Filter</button>
-          <p>${ip ? "IP-kolom is zichtbaar voor de hoofdbeheerder." : "IP-adressen zijn verborgen. Alleen een hoofdbeheerder ziet ze."}</p>
         </form>
+        <p class="fout">${esc(fout)}</p>
         <h2>Inlogpogingen</h2>
         <table><thead><tr><th>Moment</th><th>Bron</th><th>Dossier</th><th>Uitkomst</th>${ip ? "<th>IP</th>" : ""}</tr></thead><tbody>
           ${inlog.length ? inlog.map((r) => `<tr><td>${esc(new Date(r.moment).toLocaleString("nl-NL"))}</td><td>${esc(r.bron)}</td><td>${esc(r.pv_naam)} ${esc(r.client_id)}</td><td>${esc(r.resultaat)}</td>${ip ? `<td>${esc(r.ip || "—")}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${ip ? 5 : 4}">Geen inlogpogingen in deze selectie.</td></tr>`}
@@ -236,8 +236,23 @@
           p_dagen: Number(dagenF),
           p_q: qF,
         });
-        if (error) fout = error.message.includes("function") ? "Draai migrations/0005_audit_inlog.sql in Supabase." : error.message;
-        else overzicht = data || overzicht;
+        const ongefilterd = !bronF && !soortF && !niveauF && !qF;
+        const leeg = !data || ((!data.register || !data.register.length) && (!data.inlog || !data.inlog.length));
+        if (error || (ongefilterd && leeg)) {
+          const oud = await sb.rpc("boa_audit_lijst");
+          if (!oud.error && Array.isArray(oud.data) && oud.data.length) {
+            overzicht = { ip_zichtbaar: ik.rol === "beheerder", inlog: data?.inlog || [], register: oud.data };
+            fout = "";
+          } else if (error) {
+            fout = error.message.includes("function") ? "Draai schema-0005.sql in Supabase." : error.message;
+          } else if (data) {
+            overzicht = data;
+            fout = "";
+          }
+        } else {
+          overzicht = data;
+          fout = "";
+        }
       }
       app.innerHTML = schil();
       bind();
