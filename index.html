@@ -76,6 +76,17 @@
       return { fout: bericht };
     }
 
+    function qrSrc(qr) {
+      if (!qr) return "";
+      const ruw = String(qr);
+      if (ruw.startsWith("data:image/svg+xml;base64,")) return ruw;
+      let svg = ruw;
+      const data = ruw.match(/^data:image\/svg\+xml(?:;charset=[^,]+)?(?:;utf-?8)?,(.*)$/i);
+      if (data) svg = decodeURIComponent(data[1]);
+      if (!svg.includes("<svg")) return ruw;
+      return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+    }
+
     function factorHtml() {
       const setup = factor.modus === "setup";
       const poort = factor.modus === "poort";
@@ -85,10 +96,11 @@
         : setup
           ? "Scan de code en noem hem BOA Beheer. Dezelfde code geldt voor dit systeem, de behandelaar op de servicedesk en mail. Niet de code van boaportaal.nl."
           : "Vul de 6 cijfers van BOA Beheer in. Dezelfde code als bij de behandelaar en op mail. Niet de code van boaportaal.nl.";
+      const bron = qrSrc(factor.qr);
       return `<form id="factor" class="kaart">
         <h1>${titel}</h1>
         <p>${tekst}</p>
-        ${setup && factor.qr ? `<p><img src="${factor.qr}" alt="QR-code voor de beheer-authenticator" width="220" height="220" style="background:#fff;padding:8px"></p>` : ""}
+        ${bron ? `<p><img src="${bron.replace(/"/g, """)}" alt="QR-code voor de beheer-authenticator" width="220" height="220" style="background:#fff;padding:8px"></p>` : ""}
         ${setup && factor.geheim ? `<p>Lukt scannen niet, typ dan deze sleutel: ${esc(factor.geheim)}</p>` : ""}
         <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>
         <button>Bevestigen</button>
