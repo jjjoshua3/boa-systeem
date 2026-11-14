@@ -37,7 +37,7 @@
   <main id="app">
     <h1>Aanmelden</h1>
     <form id="login" class="kaart">
-      <label>Zakelijk adres van de medewerker<input type="email" name="email" required></label>
+      <label>Client-ID of zakelijk adres<input name="email" required placeholder="BP-3200-YE of naam@organisatie.nl" autocapitalize="none" spellcheck="false"></label>
       <label>Wachtwoord<input type="password" name="password" required></label>
       <button>Inloggen</button>
       <p class="fout" id="login-fout"></p>
@@ -132,7 +132,7 @@
 
     function login() {
       return `<h1>Aanmelden</h1><form id="login" class="kaart">
-        <label>Zakelijk adres van de medewerker<input type="email" name="email" required></label>
+        <label>Client-ID of zakelijk adres<input name="email" required placeholder="BP-3200-YE of naam@organisatie.nl" autocapitalize="none" spellcheck="false"></label>
         <label>Wachtwoord<input type="password" name="password" required></label>
         <button>Inloggen</button><p class="ok">${esc(mfaLet)}</p><p class="fout">${esc(fout)}</p></form>`;
     }
@@ -370,16 +370,42 @@
         e.preventDefault();
         const f = new FormData(e.target);
         fout = "";
-        const email = String(f.get("email")).trim();
-        const { data, error } = await sb.auth.signInWithPassword({ email, password: String(f.get("password")) });
-        if (error || !data.session) {
-          noteerInlog("", email);
-          fout = error ? "Aanmelden lukt niet." : "Sessie niet opgeslagen.";
+        const sleutel = String(f.get("email")).trim();
+        const password = String(f.get("password"));
+        const knop = e.target.querySelector("button");
+        if (knop) knop.disabled = true;
+        let data = null;
+        let error = null;
+        if (sleutel.includes("@")) {
+          const inn = await sb.auth.signInWithPassword({ email: sleutel, password });
+          data = inn.data;
+          error = inn.error;
+        } else {
+          const res = await fetch("/.netlify/functions/aanmelden", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sleutel, password }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) error = { message: body.fout || "Aanmelden lukt niet." };
+          else {
+            const gezet = await sb.auth.setSession({ access_token: body.access_token, refresh_token: body.refresh_token });
+            data = gezet.data;
+            error = gezet.error;
+          }
+        }
+        if (error || !data?.session) {
+          noteerInlog("", sleutel.includes("@") ? sleutel : "");
+          const bericht = error?.message || "Aanmelden lukt niet.";
+          fout = /invalid login|credentials/i.test(bericht) ? "Deze gegevens horen niet bij elkaar." : bericht;
           teken();
           return;
         }
         sessionStorage.removeItem("boa-ok-beheer");
-        const uit = await vraagFactor("beheer");
+        const uit = await Promise.race([
+          vraagFactor("beheer"),
+          new Promise((resolve) => setTimeout(() => resolve({ fout: "Tweestaps reageert niet. Je bent wel aangemeld." }), 8000)),
+        ]);
         if (uit && uit.fout) mfaLet = "Tweestaps kon niet starten: " + uit.fout;
         else if (uit !== "klaar") { factor = uit; fout = ""; teken(); return; }
         noteerInlog(data.session.access_token, "");
