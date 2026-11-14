@@ -34,9 +34,9 @@
     <strong>SYSTEEMBEHEER & AUDIT | BOA PORTAAL</strong>
     <div style="color:#94a3b8;font-size:12px">Zoeken op ticket of Client-ID. E-mail blijft standaard dicht. Kluisinhoud is niet leesbaar.</div>
   </header>
-  <main id="app"></main>
+  <main id="app"><p style="color:#94a3b8">Bezig met laden…</p></main>
   <script type="module">
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/+esm";
     const URL = "https://ofzyqwpztohflxdhqgbb.supabase.co";
     const KEY = "sb_publishable_x8nU8ype6b1KOL6K8lS2Iw_DDjz4Olr";
     const sb = createClient(URL, KEY);
@@ -219,13 +219,13 @@
           <button>Account aanmaken</button>
         </form>`;
       const staf = ik.rol === "beheerder" ? `<h2>Medewerker voor de servicedesk</h2><form id="medewerker" class="kaart">
-        <p>Alleen de hoofdbeheerder. Dit account krijgt een rol op de servicedesk en in dit systeem.</p>
-        <label>PV-naam<input name="pv_naam" placeholder="DE VRIES, M.A." required></label>
-        <label>Zakelijk adres (alleen voor het aanmaken, daarna niet meer zichtbaar)<input type="email" name="email" required></label>
-        <label>Startwachtwoord<input type="password" name="password" required minlength="12"></label>
+        <p>Alleen de hoofdbeheerder. Vul een bestaande Client-ID of een zakelijk adres in. Die persoon krijgt een uitnodiging voor mail, status, servicedesk en systeem.</p>
+        <label>Client-ID of zakelijk adres<input name="sleutel" required placeholder="BP-3200-YE of naam@organisatie.nl" autocapitalize="none" spellcheck="false"></label>
+        <label>PV-naam, alleen bij een adres dat nog geen account heeft<input name="pv_naam" placeholder="DE VRIES, M.A."></label>
+        <label>Startwachtwoord, alleen bij een nieuw adres<input type="password" name="password" minlength="12" autocomplete="new-password"></label>
         <label>Rol<select name="rol"><option value="support">Support (1e lijn)</option><option value="beheerder">Beheerder (2e lijn)</option></select></label>
         <label>Postbusnaam, leeg = Client-ID<input name="postbus" placeholder="joshua.bosma" autocapitalize="none" spellcheck="false"></label>
-        <button>Medewerker aanmaken</button>
+        <button>Uitnodigen</button>
       </form>` : "";
       return `${portaal}${staf}<p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
     }
@@ -453,11 +453,11 @@
         const res = await fetch("/.netlify/functions/medewerker", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
-          body: JSON.stringify({ pv_naam: f.get("pv_naam"), email: f.get("email"), password: f.get("password"), rol: f.get("rol"), postbus: f.get("postbus") }),
+          body: JSON.stringify({ pv_naam: f.get("pv_naam"), sleutel: f.get("sleutel"), password: f.get("password"), rol: f.get("rol"), postbus: f.get("postbus") }),
         });
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) { fout = body.fout || "Aanmaken lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; }
-        else { fout = ""; melding = `Medewerker ${body.pv_naam} · ${body.client_id} (${body.rol}). Dit account kan in op de servicedesk.`; e.target.reset(); }
+        if (!res.ok) { fout = body.fout || "Uitnodigen lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; }
+        else { fout = ""; melding = body.mail ? `${body.pv_naam} · ${body.client_id} is uitgenodigd. De mail naar de medewerkersportalen is verstuurd.` : `${body.pv_naam} · ${body.client_id} staat erin. ${body.mailFout || "De uitnodigingsmail is niet verstuurd."}`; e.target.reset(); }
         teken();
       });
       document.getElementById("filter")?.addEventListener("submit", (e) => {
@@ -541,13 +541,27 @@
       });
     }
 
-    await vernieuw();
-    if (ik) {
-      const uit = await vraagFactor("beheer");
-      if (uit && uit.fout) mfaLet = "Tweestaps kon niet starten: " + uit.fout;
-      else if (uit !== "klaar") factor = uit;
+    app.innerHTML = `<p style="color:#94a3b8">Bezig met laden…</p>`;
+    try {
+      await Promise.race([
+        vernieuw(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("tijd")), 12000)),
+      ]);
+    } catch (err) {
+      ik = null;
+      fout = err?.message === "tijd" ? "Het accountsysteem reageert niet. Vernieuw de pagina." : (err?.message || "Laden lukt niet.");
     }
     teken();
+    if (ik?.medewerker) {
+      try {
+        const uit = await vraagFactor("beheer");
+        if (uit && uit.fout) mfaLet = "Tweestaps kon niet starten: " + uit.fout;
+        else if (uit !== "klaar") factor = uit;
+      } catch (err) {
+        mfaLet = "Tweestaps kon niet starten: " + (err?.message || "onbekend");
+      }
+      teken();
+    }
   </script>
 </body>
 </html>
