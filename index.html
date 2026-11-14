@@ -35,8 +35,16 @@
     <div style="color:#94a3b8;font-size:12px">Zoeken op ticket of Client-ID. E-mail blijft standaard dicht. Kluisinhoud is niet leesbaar.</div>
   </header>
   <main id="app"><p style="color:#94a3b8">Bezig met laden…</p></main>
+  <script>
+    setTimeout(() => {
+      const app = document.querySelector("#app");
+      if (app && app.dataset.klaar !== "1") {
+        app.innerHTML = `<div class="kaart"><h1>Aanmelden</h1><p>Het accountsysteem reageert niet. Vernieuw de pagina.</p></div>`;
+      }
+    }, 8000);
+  </script>
   <script type="module">
-    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/+esm";
+    import { createClient } from "/vendor/supabase.js";
     const URL = "https://ofzyqwpztohflxdhqgbb.supabase.co";
     const KEY = "sb_publishable_x8nU8ype6b1KOL6K8lS2Iw_DDjz4Olr";
     const sb = createClient(URL, KEY);
@@ -319,6 +327,7 @@
     }
 
     async function teken() {
+      app.dataset.klaar = "1";
       if (factor) { app.innerHTML = factorHtml(); bind(); return; }
       if (!ik) { app.innerHTML = login(); bind(); return; }
       if (!ik.medewerker) {
@@ -545,7 +554,7 @@
     try {
       await Promise.race([
         vernieuw(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("tijd")), 12000)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("tijd")), 4000)),
       ]);
     } catch (err) {
       ik = null;
