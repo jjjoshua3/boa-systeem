@@ -83,10 +83,7 @@
         const stap = await tweedeStap();
         if (stap === "wacht") return;
         if (stap === "uit") {
-          await sb.auth.signOut();
-          ik = null;
-          fout = "Tweestaps is nog niet aangezet in het accountsysteem. Zet TOTP aan bij Authentication en log opnieuw in.";
-          return;
+          if (!fout) fout = "Tweestaps is nog niet aangezet in het accountsysteem. Zet TOTP aan bij Authentication. Tot die tijd geldt alleen het wachtwoord.";
         }
       }
       const { data: prof, error } = await sb.rpc("boa_ik");
