@@ -68,6 +68,18 @@ export default async function handler(request) {
       indiener: recht.client_id,
     });
     if (error) return antwoord(request, { fout: "Draai schema-0014.sql in Supabase." }, 500);
+    await log(poort.sb, {
+      wie: recht.client_id,
+      naam: recht.pv_naam,
+      soort: "REDACTIE_VOORSTEL",
+      niveau: "INFO",
+      bron: bronVan(soort),
+      titel,
+      sleutel,
+      reden: payload.verwijderd
+        ? `Weghalen voorgesteld: ${naamVan(soort)} ${titel}. Sleutel ${sleutel}. De site toont de oude tekst tot dit is goedgekeurd.`
+        : `Voorstel voor ${naamVan(soort)}: ${titel}. Sleutel ${sleutel}. Staat nog niet op de site.`,
+    });
     return antwoord(request, { ok: true });
   }
   if (actie === "keur") {
@@ -75,7 +87,7 @@ export default async function handler(request) {
     const id = String(body.id || "");
     const besluit = body.besluit === "goed" ? "goed" : body.besluit === "af" ? "af" : "";
     if (!besluit) return antwoord(request, { fout: "Kies goedkeuren of afwijzen." }, 400);
-    const { data: rij, error } = await poort.sb.from("boa_voorstel").select("id, soort, sleutel, payload, status").eq("id", id).maybeSingle();
+    const { data: rij, error } = await poort.sb.from("boa_voorstel").select("id, soort, sleutel, titel, payload, status, indiener").eq("id", id).maybeSingle();
     if (error || !rij || rij.status !== "wacht") return antwoord(request, { fout: "Dit voorstel ligt niet meer ter beoordeling." }, 404);
     if (besluit === "goed") {
       const opslag = await poort.sb.from("boa_inhoud").upsert({
@@ -93,6 +105,19 @@ export default async function handler(request) {
       beoordeeld_op: new Date().toISOString(),
       notitie: String(body.notitie || "").slice(0, 400),
     }).eq("id", id);
+    const weg = rij.payload?.verwijderd === true;
+    await log(poort.sb, {
+      wie: recht.client_id,
+      naam: recht.pv_naam,
+      soort: besluit === "goed" ? "REDACTIE_GOED" : "REDACTIE_AF",
+      niveau: besluit === "goed" ? "HIGH" : "INFO",
+      bron: bronVan(rij.soort),
+      titel: rij.titel,
+      sleutel: rij.sleutel,
+      reden: besluit === "goed"
+        ? `Goedgekeurd en op boaportaal.nl gezet: ${naamVan(rij.soort)} ${rij.titel}. Sleutel ${rij.sleutel}. Voorgelegd door ${rij.indiener}.${weg ? " De tekst is van de site gehaald." : ""}`
+        : `Afgewezen. De site blijft zoals hij was: ${naamVan(rij.soort)} ${rij.titel}. Sleutel ${rij.sleutel}. Voorgelegd door ${rij.indiener}.`,
+    });
     return antwoord(request, { ok: true });
   }
   return antwoord(request, { fout: "Onbekende actie." }, 400);
@@ -101,4 +126,29 @@ export default async function handler(request) {
 function magVan(mag, soort) {
   if (soort === "vraag" || soort === "beginsel" || soort === "casus") return mag.trainer;
   return Boolean(mag[soort]);
+}
+
+function bronVan(soort) {
+  if (soort === "feit") return "feitcode";
+  if (soort === "boom") return "beslisboom";
+  if (soort === "jargon") return "vakjargon";
+  return "trainer";
+}
+
+function naamVan(soort) {
+  return { feit: "feitcode", boom: "beslisboom", jargon: "begrip", vraag: "trainervraag", beginsel: "beginsel", casus: "casus" }[soort] || soort;
+}
+
+async function log(sb, regel) {
+  await sb.from("boa_audit").insert({
+    beheerder_id: regel.wie,
+    beheerder_naam: regel.naam || regel.wie,
+    doel_client_id: "",
+    doel_pv_naam: String(regel.titel || "").slice(0, 160),
+    ticketnummer: String(regel.sleutel || "").slice(0, 80),
+    reden: String(regel.reden || "").slice(0, 500),
+    soort: regel.soort,
+    niveau: regel.niveau,
+    bron: regel.bron,
+  });
 }

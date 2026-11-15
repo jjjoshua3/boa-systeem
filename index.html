@@ -82,6 +82,28 @@
     const app = document.querySelector("#app");
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&" + "amp;", "<": "&" + "lt;", ">": "&" + "gt;", '"': "&" + "quot;", "'": "&" + "#39;"}[c]));
     const aanUit = (aan) => aan ? "aan" : "uit";
+    const soortLabel = (soort) => ({
+      REDACTIE_VOORSTEL: "Redactie voorgelegd",
+      REDACTIE_GOED: "Redactie goedgekeurd",
+      REDACTIE_AF: "Redactie afgewezen",
+      REDACTIE_RECHT: "Redactierecht",
+      INZAGE: "Inzage",
+      BREAK_GLASS: "Nood-opvraag",
+      CRITICAL_AUTH_CHANGE: "Auth-wijziging",
+      MAIL_VERZONDEN: "Mail verzonden",
+      MAIL_CLAIM: "Mail geclaimd",
+      MAIL_UNCLAIM: "Claim losgelaten",
+    }[soort] || soort);
+    const bronLabel = (bron) => ({
+      feitcode: "feitcode.boaportaal.nl",
+      beslisboom: "beslisboom.boaportaal.nl",
+      vakjargon: "vakjargon.boaportaal.nl",
+      trainer: "trainer.boaportaal.nl",
+      portaal: "boaportaal.nl",
+      servicedesk: "servicedesk.boaportaal.nl",
+      systeem: "systeem.boaportaal.nl",
+      mail: "mail.boaportaal.nl",
+    }[bron] || bron || "systeem");
     let ik = null, tab = "zoek", dossier = null, overzicht = { inlog: [], register: [], ip_zichtbaar: false }, fout = "", melding = "", glas = false, blokken = [], blokQ = "", blokOpen = "";
     let factor = null, mfaLet = "";
     let bronF = "", soortF = "", niveauF = "", dagenF = "30", qF = "";
@@ -331,6 +353,10 @@
               ${opt("servicedesk", "servicedesk.boaportaal.nl", bronF)}
               ${opt("systeem", "systeem.boaportaal.nl", bronF)}
               ${opt("mail", "mail.boaportaal.nl", bronF)}
+              ${opt("feitcode", "feitcode.boaportaal.nl", bronF)}
+              ${opt("beslisboom", "beslisboom.boaportaal.nl", bronF)}
+              ${opt("vakjargon", "vakjargon.boaportaal.nl", bronF)}
+              ${opt("trainer", "trainer.boaportaal.nl", bronF)}
             </select></label>
             <label>Soort<select name="soort">
               ${opt("", "Alle soorten", soortF)}
@@ -340,6 +366,10 @@
               ${opt("MAIL_VERZONDEN", "Mail verzonden", soortF)}
               ${opt("MAIL_CLAIM", "Mail geclaimd", soortF)}
               ${opt("MAIL_UNCLAIM", "Claim losgelaten", soortF)}
+              ${opt("REDACTIE_VOORSTEL", "Redactie voorgelegd", soortF)}
+              ${opt("REDACTIE_GOED", "Redactie goedgekeurd", soortF)}
+              ${opt("REDACTIE_AF", "Redactie afgewezen", soortF)}
+              ${opt("REDACTIE_RECHT", "Redactierecht", soortF)}
             </select></label>
             <label>Niveau<select name="niveau">
               ${opt("", "Alle niveaus", niveauF)}
@@ -363,7 +393,7 @@
         </tbody></table>
         <h2>Register</h2>
         <table><thead><tr><th>Moment</th><th>Bron</th><th>Beheerder</th><th>Dossier</th><th>Ticket</th><th>Soort</th><th>Niveau</th><th>Reden</th></tr></thead><tbody>
-          ${register.length ? register.map((a) => `<tr><td>${esc(new Date(a.moment).toLocaleString("nl-NL"))}</td><td>${esc(a.bron || "systeem")}</td><td>${esc(a.beheerder_naam)} ${esc(a.beheerder_id)}</td><td>${esc(a.doel_pv_naam)} ${esc(a.doel_client_id)}</td><td>${esc(a.ticketnummer)}</td><td>${esc(a.soort)}</td><td>${esc(a.niveau)}</td><td>${esc(a.reden)}</td></tr>`).join("") : `<tr><td colspan="8">Geen registerregels in deze selectie.</td></tr>`}
+          ${register.length ? register.map((a) => `<tr><td>${esc(new Date(a.moment).toLocaleString("nl-NL"))}</td><td>${esc(bronLabel(a.bron))}</td><td>${esc(a.beheerder_naam)} ${esc(a.beheerder_id)}</td><td>${esc(a.doel_pv_naam)} ${esc(a.doel_client_id)}</td><td>${esc(a.ticketnummer)}</td><td>${esc(soortLabel(a.soort))}</td><td>${esc(a.niveau)}</td><td>${esc(a.reden)}</td></tr>`).join("") : `<tr><td colspan="8">Geen registerregels in deze selectie.</td></tr>`}
         </tbody></table>`;
     }
 

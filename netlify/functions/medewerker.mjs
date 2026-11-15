@@ -76,6 +76,23 @@ export default async (request) => {
     };
     const { data, error } = await poort.sb.from("boa_medewerker").update(vlaggen).eq("client_id", cid).select("client_id, pv_naam, mag_feit, mag_boom, mag_jargon, mag_trainer").maybeSingle();
     if (error || !data) return json({ fout: error ? "Draai schema-0014.sql in Supabase." : "Geen medewerker met die Client-ID." }, error ? 500 : 404);
+    const aan = [
+      data.mag_feit ? "feitcodes aan" : "feitcodes uit",
+      data.mag_boom ? "beslisbomen aan" : "beslisbomen uit",
+      data.mag_jargon ? "vakjargon aan" : "vakjargon uit",
+      data.mag_trainer ? "trainer aan" : "trainer uit",
+    ].join(", ");
+    await poort.sb.from("boa_audit").insert({
+      beheerder_id: poort.med.client_id,
+      beheerder_naam: "hoofdbeheerder",
+      doel_client_id: data.client_id,
+      doel_pv_naam: data.pv_naam,
+      ticketnummer: "",
+      reden: `Redactierecht gezet voor ${data.pv_naam} ${data.client_id}: ${aan}.`,
+      soort: "REDACTIE_RECHT",
+      niveau: "HIGH",
+      bron: "systeem",
+    });
     return json(data);
   }
   const sleutel = String(body.sleutel || body.email || "").trim();
