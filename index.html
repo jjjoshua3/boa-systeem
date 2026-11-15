@@ -336,19 +336,30 @@
       ${tab==="zoek" ? zoek() : tab==="mensen" ? medewerkers() : auditHtml()}`;
     }
 
+    async function inlogLijst(extra) {
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` };
+      const res = await fetch("/.netlify/functions/inlog", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ actie: "lijst", ...extra }),
+      });
+      return res.json().catch(() => ({}));
+    }
+
     async function laad30() {
       if (!dossier?.client_id) return;
       const { data, error } = await sb.rpc("boa_dossier_30", { p_client_id: dossier.client_id });
-      if (error) {
+      const lijst = await inlogLijst({ client_id: dossier.client_id, dagen: 30 });
+      if (error && !lijst.inlog) {
         dossier.inlog = [];
         dossier.handelingen = [];
         dossier.auditFout = error.message.includes("function") ? "Draai migrations/0005_audit_inlog.sql in Supabase." : error.message;
         return;
       }
-      dossier.inlog = data?.inlog || [];
+      dossier.inlog = lijst.inlog || data?.inlog || [];
       dossier.handelingen = data?.handelingen || [];
-      dossier.ip_zichtbaar = Boolean(data?.ip_zichtbaar);
-      dossier.auditFout = "";
+      dossier.ip_zichtbaar = Boolean(lijst.ip_zichtbaar ?? data?.ip_zichtbaar);
+      dossier.auditFout = lijst.fout && !lijst.inlog ? lijst.fout : "";
     }
 
     function noteerInlog(token, email) {
@@ -395,6 +406,13 @@
         } else {
           overzicht = data;
           fout = "";
+        }
+        const lijst = await inlogLijst({ dagen: Number(dagenF), bron: bronF, q: qF });
+        if (lijst.inlog) {
+          overzicht = { ...(overzicht || {}), inlog: lijst.inlog, ip_zichtbaar: Boolean(lijst.ip_zichtbaar), register: overzicht?.register || data?.register || [] };
+          fout = "";
+        } else if (lijst.fout) {
+          fout = lijst.fout;
         }
       }
       app.innerHTML = schil();
