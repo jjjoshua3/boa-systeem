@@ -62,8 +62,12 @@ export default async (request) => {
     }
     rij = data;
   }
-  if (rij?.locked) return antwoord(request, { fout: PERMANENT }, 423);
+  if (rij?.locked) {
+    await noteerPoging(ipVan(request), "portaal", email, true);
+    return antwoord(request, { fout: PERMANENT }, 423);
+  }
   if (rij?.slot_tot && new Date(rij.slot_tot).getTime() > Date.now()) {
+    await noteerPoging(ipVan(request), "portaal", email, true);
     return antwoord(request, { fout: tijdelijk(rij.slot_tot) }, 423);
   }
   const publiek = createClient(url, process.env.SUPABASE_PUBLISHABLE_KEY || PUBLIEK, {

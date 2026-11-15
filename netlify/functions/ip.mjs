@@ -3,6 +3,7 @@ import { beheerder } from "./lib.mjs";
 const VENSTER = 15 * 60 * 1000;
 const DREMPEL_NAMEN = 8;
 const DREMPEL_ONBEKEND = 5;
+const DREMPEL_SPAM = 12;
 
 function koppen(request) {
   const bron = request.headers.get("origin") || "";
@@ -88,16 +89,21 @@ export async function noteerPoging(ip, bron, naam, bekend) {
   for (const poging of pogingen || []) {
     const sleutel = schoonNaam(poging.naam);
     if (sleutel.length < 2) continue;
-    const had = perNaam.get(sleutel) || { bekend: null };
+    const had = perNaam.get(sleutel) || { bekend: null, aantal: 0 };
+    had.aantal += 1;
     if (poging.bekend === false) had.bekend = false;
     else if (poging.bekend === true && had.bekend !== false) had.bekend = true;
     perNaam.set(sleutel, had);
   }
   const namen = [...perNaam.keys()];
   const onbekend = namen.filter((sleutel) => perNaam.get(sleutel).bekend === false);
-  if (namen.length < DREMPEL_NAMEN && onbekend.length < DREMPEL_ONBEKEND) return { blok: false, ip: schoon };
+  const spam = [...perNaam.entries()].filter(([, info]) => info.aantal >= DREMPEL_SPAM);
+  if (namen.length < DREMPEL_NAMEN && onbekend.length < DREMPEL_ONBEKEND && !spam.length) return { blok: false, ip: schoon };
   const bronnen = [...new Set((pogingen || []).map((poging) => poging.bron).filter(Boolean))].join(", ") || bron;
-  const reden = onbekend.length >= DREMPEL_ONBEKEND && namen.length < DREMPEL_NAMEN
+  const zwaarste = spam.sort((a, b) => b[1].aantal - a[1].aantal)[0];
+  const reden = zwaarste
+    ? `${zwaarste[1].aantal} mislukte wachtwoorden op hetzelfde account binnen 15 minuten. Account: ${zwaarste[0]}. Patroon: wachtwoord afproberen. Gezien op: ${bronnen}.`
+    : onbekend.length >= DREMPEL_ONBEKEND && namen.length < DREMPEL_NAMEN
     ? `${onbekend.length} onbekende aanmeldnamen in 15 minuten vanaf één IP. Die namen bestaan niet. Patroon: afproberen of vervalsen. Namen: ${onbekend.slice(0, 12).join(", ")}. Gezien op: ${bronnen}.`
     : `${namen.length} verschillende aanmeldnamen in 15 minuten vanaf één IP. Bekende en onbekende accounts door elkaar. Patroon: accounts afproberen. Namen: ${namen.slice(0, 12).join(", ")}. Gezien op: ${bronnen}.`;
   const { data } = await sb.from("boa_ip_blok").insert({
@@ -105,7 +111,7 @@ export async function noteerPoging(ip, bron, naam, bekend) {
     referentie: referentie(),
     reden,
     bron: bronnen,
-    pogingen: namen.length,
+    pogingen: zwaarste ? zwaarste[1].aantal : namen.length,
     door: "SOC",
   }).select("ip, referentie, gemaakt, actief").single();
   return naarBuiten(data, schoon);
