@@ -48,6 +48,77 @@ export default async (request) => {
   const poort = await beheerder(request, ["beheerder"]);
   if (poort.fout) return json({ fout: poort.fout }, poort.status);
   const body = await request.json();
+  if (body.actie === "lijst") {
+    const q = String(body.q || "").trim().toLowerCase();
+    const { data, error } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam, rol, actief, whatsapp, mag_feit, mag_boom, mag_jargon, mag_trainer").order("pv_naam");
+    if (error) return json({ fout: "De medewerkers zijn niet geladen." }, 500);
+    const rijen = [];
+    for (const rij of data || []) {
+      const ident = await poort.sb.from("boa_identiteit").select("mfa_uren").eq("user_id", rij.user_id).maybeSingle();
+      const user = await poort.sb.auth.admin.getUserById(rij.user_id);
+      const postbus = String(user.data?.user?.user_metadata?.mail_local || "");
+      const kaart = {
+        client_id: rij.client_id,
+        pv_naam: rij.pv_naam,
+        rol: rij.rol,
+        actief: rij.actief,
+        whatsapp: Boolean(rij.whatsapp),
+        feit: Boolean(rij.mag_feit),
+        boom: Boolean(rij.mag_boom),
+        jargon: Boolean(rij.mag_jargon),
+        trainer: Boolean(rij.mag_trainer),
+        mfa_uren: Number(ident.data?.mfa_uren) || 8,
+        postbus,
+      };
+      const tekst = `${kaart.client_id} ${kaart.pv_naam} ${kaart.rol} ${postbus}`.toLowerCase();
+      if (!q || tekst.includes(q)) rijen.push(kaart);
+    }
+    return json({ medewerkers: rijen });
+  }
+  if (body.actie === "profiel") {
+    const cid = String(body.client_id || "").trim().toUpperCase();
+    const reden = String(body.reden || "").trim();
+    const pv = String(body.pv_naam || "").trim().replace(/\s+/g, " ").slice(0, 80);
+    const postbus = String(body.postbus || "").trim().toLowerCase().replace(/@boaportaal\.nl$/, "");
+    const uren = Number(body.mfa_uren);
+    if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Geen geldige Client-ID." }, 400);
+    if (reden.length < 12) return json({ fout: "De reden is te kort." }, 400);
+    if (![8, 24, 48, 72].includes(uren)) return json({ fout: "Kies 8, 24, 48 of 72 uur." }, 400);
+    if (postbus && !/^[a-z0-9._-]{2,40}$/.test(postbus)) return json({ fout: "De postbusnaam klopt niet. Alleen de naam, zonder @boaportaal.nl." }, 400);
+    const { data: huidig } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam").eq("client_id", cid).maybeSingle();
+    if (!huidig) return json({ fout: "Geen medewerker met die Client-ID." }, 404);
+    const rol = body.rol === "beheerder" ? "beheerder" : "support";
+    const { error } = await poort.sb.from("boa_medewerker").update({
+      pv_naam: pv || huidig.pv_naam,
+      rol,
+      actief: Boolean(body.actief),
+      whatsapp: Boolean(body.whatsapp),
+      mag_feit: Boolean(body.feit),
+      mag_boom: Boolean(body.boom),
+      mag_jargon: Boolean(body.jargon),
+      mag_trainer: Boolean(body.trainer),
+    }).eq("client_id", cid);
+    if (error) return json({ fout: "Het profiel is niet opgeslagen." }, 500);
+    const ident = await poort.sb.from("boa_identiteit").update({ pv_naam: pv || huidig.pv_naam, mfa_uren: uren }).eq("user_id", huidig.user_id);
+    if (ident.error) return json({ fout: "De duur zonder tweede stap is niet opgeslagen. Draai schema-0018.sql." }, 500);
+    if (postbus) {
+      const user = await poort.sb.auth.admin.getUserById(huidig.user_id);
+      const meta = user.data?.user?.user_metadata || {};
+      const bijgewerkt = await poort.sb.auth.admin.updateUserById(huidig.user_id, { user_metadata: { ...meta, mail_local: postbus } });
+      if (bijgewerkt.error) return json({ fout: "De postbus is niet gekoppeld." }, 500);
+    }
+    await poort.sb.from("boa_audit").insert({
+      beheerder_id: poort.med.client_id,
+      beheerder_naam: "hoofdbeheerder",
+      doel_client_id: cid,
+      doel_pv_naam: pv || huidig.pv_naam,
+      ticketnummer: "",
+      reden: reden.slice(0, 240),
+      soort: "CRITICAL_AUTH_CHANGE",
+      niveau: "CRITICAL",
+    });
+    return json({ ok: true });
+  }
   if (body.actie === "whatsapp") {
     const cid = String(body.sleutel || "").trim().toUpperCase();
     if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Vul een Client-ID in." }, 400);

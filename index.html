@@ -105,6 +105,7 @@
       mail: "mail.boaportaal.nl",
     }[bron] || bron || "systeem");
     let ik = null, tab = "zoek", dossier = null, overzicht = { inlog: [], register: [], ip_zichtbaar: false }, fout = "", melding = "", glas = false, blokken = [], blokQ = "", blokOpen = "";
+    let staf = [], stafQ = "", stafOpen = "";
     let factor = null, mfaLet = "";
     let bronF = "", soortF = "", niveauF = "", dagenF = "30", qF = "";
     const query = new URLSearchParams(location.search);
@@ -171,6 +172,20 @@
         <button>Bevestigen</button>
         <p class="fout">${esc(fout)}</p>
       </form>`;
+    }
+
+    async function laadStaf() {
+      if (ik?.rol !== "beheerder") return;
+      const res = await fetch("/.netlify/functions/medewerker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+        body: JSON.stringify({ actie: "lijst", q: stafQ }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { fout = body.fout || "De medewerkers zijn niet geladen."; teken(); return; }
+      staf = body.medewerkers || [];
+      if (stafOpen && !staf.some((rij) => rij.client_id === stafOpen)) stafOpen = "";
+      teken();
     }
 
     async function vernieuw() {
@@ -319,6 +334,32 @@
     }
 
     function medewerkers() {
+      const open = staf.find((rij) => rij.client_id === stafOpen);
+      const vink = (naam, aan, label) => `<label><input type="checkbox" name="${naam}" ${aan ? "checked" : ""}> ${label}</label>`;
+      const profiel = open ? `<form id="staf-profiel" class="kaart">
+        <h2>${esc(open.pv_naam)} · ${esc(open.client_id)}</h2>
+        <label>PV-naam<input name="pv_naam" value="${esc(open.pv_naam)}" required></label>
+        <label>Rol<select name="rol"><option value="support" ${open.rol === "support" ? "selected" : ""}>Support</option><option value="beheerder" ${open.rol === "beheerder" ? "selected" : ""}>Beheerder</option></select></label>
+        <label>Zonder tweede stap<select name="mfa_uren">${[8, 24, 48, 72].map((uur) => `<option value="${uur}" ${Number(open.mfa_uren) === uur ? "selected" : ""}>${uur} uur</option>`).join("")}</select></label>
+        <label>Postbus, zonder @boaportaal.nl<input name="postbus" value="${esc(open.postbus || "")}" placeholder="joshua.bosma" autocapitalize="none" spellcheck="false"></label>
+        ${vink("actief", open.actief, "Account actief")}
+        ${vink("whatsapp", open.whatsapp, "WhatsApp")}
+        ${vink("feit", open.feit, "Feitcodes")}
+        ${vink("boom", open.boom, "Beslisbomen")}
+        ${vink("jargon", open.jargon, "Vakjargon")}
+        ${vink("trainer", open.trainer, "Trainer")}
+        <label>Reden<textarea name="reden" required minlength="12" placeholder="Aanpassing medewerkersprofiel, ticket M2611-0412"></textarea></label>
+        <button>Profiel opslaan</button>
+      </form>` : "";
+      const lijst = `<form id="staf-zoek" class="kaart">
+        <h1>Medewerkers</h1>
+        <p>Zoek een medewerker en pas het profiel aan. Elke wijziging komt in het auditlog.</p>
+        <label>Naam, Client-ID of postbus<input name="q" value="${esc(stafQ)}" placeholder="bosma of BP-3200-YE"></label>
+        <button class="sec" type="submit">Zoeken</button>
+        <table style="margin-top:12px"><thead><tr><th>Naam</th><th>Client-ID</th><th>Rol</th><th>Postbus</th><th>Status</th></tr></thead><tbody>
+          ${staf.length ? staf.map((rij) => `<tr class="rijklik" data-staf="${esc(rij.client_id)}"><td>${esc(rij.pv_naam)}</td><td>${esc(rij.client_id)}</td><td>${esc(rij.rol)}</td><td>${esc(rij.postbus || "—")}</td><td>${rij.actief ? "actief" : "uit"}</td></tr>`).join("") : `<tr><td colspan="5">Geen medewerkers in deze selectie.</td></tr>`}
+        </tbody></table>
+      </form>${profiel}`;
       const portaal = `<h1>Account voor boaportaal.nl</h1>
         <form id="gebruiker" class="kaart">
           <p>Support en de hoofdbeheerder. Dit account kan in op boaportaal.nl. Het krijgt geen recht op de servicedesk.</p>
@@ -327,7 +368,7 @@
           <label>Startwachtwoord<input type="password" name="password" required minlength="12"></label>
           <button>Account aanmaken</button>
         </form>`;
-      const staf = ik.rol === "beheerder" ? `<h2>Medewerker voor de servicedesk</h2><form id="medewerker" class="kaart">
+      const uitnodiging = ik.rol === "beheerder" ? `<h2>Medewerker voor de servicedesk</h2><form id="medewerker" class="kaart">
         <p>Alleen de hoofdbeheerder. Vul een bestaande Client-ID of een zakelijk adres in. Die persoon krijgt een uitnodiging voor mail, status, servicedesk en systeem.</p>
         <label>Client-ID of zakelijk adres<input name="sleutel" required placeholder="BP-3200-YE of naam@organisatie.nl" autocapitalize="none" spellcheck="false"></label>
         <label>PV-naam, alleen bij een adres dat nog geen account heeft<input name="pv_naam" placeholder="DE VRIES, M.A."></label>
@@ -354,7 +395,7 @@
         <label><input type="checkbox" name="trainer"> Trainer · trainer.boaportaal.nl</label>
         <button>Rechten opslaan</button>
       </form>` : "";
-      return `${portaal}${staf}<p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
+      return `${ik.rol === "beheerder" ? lijst : ""}${portaal}${uitnodiging}<p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
     }
 
     function auditHtml() {
@@ -559,7 +600,7 @@
 
     function bind() {
       document.getElementById("uit")?.addEventListener("click", async () => { localStorage.removeItem("boa-ok-beheer-tot"); await sb.auth.signOut(); ik = null; dossier = null; factor = null; teken(); });
-      document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; fout = ""; melding = ""; teken(); }));
+      document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; fout = ""; melding = ""; if (tab === "mensen") laadStaf(); teken(); }));
       document.getElementById("blok-zoek")?.addEventListener("submit", (e) => {
         e.preventDefault();
         blokQ = String(new FormData(e.target).get("q") || "").trim();
@@ -785,6 +826,40 @@
         noteerInlog(sessie.data.session?.access_token || "", "");
         await vernieuw();
         teken();
+      });
+      document.getElementById("staf-zoek")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        stafQ = String(new FormData(e.target).get("q") || "");
+        await laadStaf();
+      });
+      document.querySelectorAll("[data-staf]").forEach((rij) => rij.addEventListener("click", () => { stafOpen = rij.dataset.staf; teken(); }));
+      document.getElementById("staf-profiel")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const res = await fetch("/.netlify/functions/medewerker", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({
+            actie: "profiel",
+            client_id: stafOpen,
+            pv_naam: f.get("pv_naam"),
+            rol: f.get("rol"),
+            mfa_uren: Number(f.get("mfa_uren")),
+            postbus: f.get("postbus"),
+            actief: Boolean(f.get("actief")),
+            whatsapp: Boolean(f.get("whatsapp")),
+            feit: Boolean(f.get("feit")),
+            boom: Boolean(f.get("boom")),
+            jargon: Boolean(f.get("jargon")),
+            trainer: Boolean(f.get("trainer")),
+            reden: f.get("reden"),
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "Het profiel is niet opgeslagen."; melding = ""; teken(); return; }
+        fout = "";
+        melding = "Het medewerkersprofiel is opgeslagen en gelogd.";
+        await laadStaf();
       });
       document.getElementById("mfauren")?.addEventListener("submit", async (e) => {
         e.preventDefault();
