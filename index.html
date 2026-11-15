@@ -411,7 +411,7 @@
         if (lijst.inlog) {
           overzicht = { ...(overzicht || {}), inlog: lijst.inlog, ip_zichtbaar: Boolean(lijst.ip_zichtbaar), register: overzicht?.register || data?.register || [] };
           fout = "";
-        } else if (lijst.fout) {
+        } else if (lijst.fout && !(overzicht?.inlog || []).length) {
           fout = lijst.fout;
         }
       }

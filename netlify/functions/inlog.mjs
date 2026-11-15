@@ -63,7 +63,7 @@ export default async (request) => {
   if (request.method !== "POST") return antwoord({ fout: "POST" }, 405);
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return antwoord({ fout: "De service-sleutel ontbreekt op de server." }, 503);
+  if (!url || !key) return antwoord({ fout: "Op de Netlify-site van systeem ontbreken SUPABASE_URL en SUPABASE_SERVICE_ROLE_KEY. Zet daar dezelfde waarden als bij mail, met scope Functions of All." }, 503);
   const sb = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
   const body = await request.json().catch(() => ({}));
   const header = request.headers.get("authorization") || "";
