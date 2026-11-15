@@ -92,8 +92,7 @@ export async function verstuurRedactie({ naar, naam, titel, url, uitleg }) {
     uitleg,
     "",
     "Zo werkt het:",
-    "1. Open de link en log in met het e-mailadres waarmee je ook op boaportaal.nl inlogt.",
-    "Dat is je eigen zakelijke adres, bijvoorbeeld van je gemeente, vervoerder of school. Niet een adres op @boaportaal.nl, en niet je Client-ID.",
+    "1. Open de link. Inloggen doe je met hetzelfde e-mailadres als waarmee je deze mail ontvangen hebt.",
     "2. Kies de tekst, pas die aan en leg hem voor.",
     "3. De hoofdbeheerder keurt hem goed. Pas daarna staat hij op boaportaal.nl.",
     "",
@@ -112,7 +111,7 @@ export async function verstuurRedactie({ naar, naam, titel, url, uitleg }) {
     <p style="color:#4b5563;font-size:14px">${url}</p>
     <p><b>Zo werkt het</b></p>
     <ol style="padding-left:18px;color:#0f2537">
-      <li>Open de link en log in met het e-mailadres waarmee je ook op boaportaal.nl inlogt. Dat is je eigen zakelijke adres, bijvoorbeeld van je gemeente, vervoerder of school. Niet een adres op @boaportaal.nl, en niet je Client-ID.</li>
+      <li>Open de link. Inloggen doe je met hetzelfde e-mailadres als waarmee je deze mail ontvangen hebt.</li>
       <li>Kies de tekst, pas die aan en leg hem voor.</li>
       <li>De hoofdbeheerder keurt hem goed. Pas daarna staat hij op boaportaal.nl.</li>
     </ol>
