@@ -681,7 +681,7 @@
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { fout = body.fout || "Opslaan mislukt."; melding = ""; teken(); return; }
         fout = "";
-        melding = `${body.pv_naam} · ${body.client_id}: feitcodes ${aanUit(body.mag_feit)}, beslisbomen ${aanUit(body.mag_boom)}, vakjargon ${aanUit(body.mag_jargon)}, trainer ${aanUit(body.mag_trainer)}.`;
+        melding = `${body.pv_naam} · ${body.client_id}: feitcodes ${aanUit(body.mag_feit)}, beslisbomen ${aanUit(body.mag_boom)}, vakjargon ${aanUit(body.mag_jargon)}, trainer ${aanUit(body.mag_trainer)}.${body.mails?.length ? ` Uitnodiging verstuurd voor ${body.mails.join(", ")}.` : ""}${body.mailFout ? ` ${body.mailFout}` : ""}`;
         teken();
       });
       document.getElementById("filter")?.addEventListener("submit", (e) => {

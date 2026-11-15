@@ -1,4 +1,4 @@
-import { beheerder, json, verstuurUitnodiging } from "./lib.mjs";
+import { beheerder, json, verstuurUitnodiging, verstuurRedactie } from "./lib.mjs";
 
 function naarPv(raw) {
   const t = String(raw || "").trim().replace(/\s+/g, " ");
@@ -68,14 +68,41 @@ export default async (request) => {
   if (body.actie === "redactie") {
     const cid = String(body.sleutel || "").trim().toUpperCase();
     if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Vul een Client-ID in." }, 400);
+    const { data: huidig } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam, mag_feit, mag_boom, mag_jargon, mag_trainer").eq("client_id", cid).maybeSingle();
+    if (!huidig) return json({ fout: "Geen medewerker met die Client-ID." }, 404);
     const vlaggen = {
       mag_feit: Boolean(body.feit),
       mag_boom: Boolean(body.boom),
       mag_jargon: Boolean(body.jargon),
       mag_trainer: Boolean(body.trainer),
     };
-    const { data, error } = await poort.sb.from("boa_medewerker").update(vlaggen).eq("client_id", cid).select("client_id, pv_naam, mag_feit, mag_boom, mag_jargon, mag_trainer").maybeSingle();
+    const { data, error } = await poort.sb.from("boa_medewerker").update(vlaggen).eq("client_id", cid).select("user_id, client_id, pv_naam, mag_feit, mag_boom, mag_jargon, mag_trainer").maybeSingle();
     if (error || !data) return json({ fout: error ? "Draai schema-0014.sql in Supabase." : "Geen medewerker met die Client-ID." }, error ? 500 : 404);
+    const delen = [
+      ["mag_feit", "Feitcodes", "https://feitcode.boaportaal.nl", "Je mag feitcodes voorleggen die op het portaal staan. De akte en het Feitenboekje gaan voor."],
+      ["mag_boom", "Beslisbomen", "https://beslisboom.boaportaal.nl", "Je mag een beslisboom voorleggen. Het blijft een geheugensteun. De akte en de wet gaan voor."],
+      ["mag_jargon", "Vakjargon", "https://vakjargon.boaportaal.nl", "Je mag een begrip voorleggen. Kort houden, en alleen wat klopt met de wet of het Feitenboekje."],
+      ["mag_trainer", "Trainer", "https://trainer.boaportaal.nl", "Je mag een oefenvraag, een beginsel of een casus voorleggen. Het antwoord blijft de wettekst volgen."],
+    ];
+    const nieuw = delen.filter(([veld]) => data[veld] && !huidig[veld]);
+    const mails = [];
+    let mailFout = "";
+    if (nieuw.length) {
+      const gebruiker = await poort.sb.auth.admin.getUserById(data.user_id);
+      const email = gebruiker.data?.user?.email || "";
+      if (!email) mailFout = "Geen zakelijk adres gevonden. Het recht staat aan, de uitnodiging is niet verstuurd.";
+      else {
+        for (const [, titel, url, uitleg] of nieuw) {
+          try {
+            const verzonden = await verstuurRedactie({ naar: email, naam: data.pv_naam, titel, url, uitleg });
+            if (verzonden.ok) mails.push(titel);
+            else mailFout = verzonden.fout || "De uitnodiging is niet verstuurd.";
+          } catch {
+            mailFout = "De uitnodiging is niet verstuurd. Controleer het wachtwoord van onboarding@boaportaal.nl op de systeem-site.";
+          }
+        }
+      }
+    }
     const aan = [
       data.mag_feit ? "feitcodes aan" : "feitcodes uit",
       data.mag_boom ? "beslisbomen aan" : "beslisbomen uit",
@@ -88,12 +115,12 @@ export default async (request) => {
       doel_client_id: data.client_id,
       doel_pv_naam: data.pv_naam,
       ticketnummer: "",
-      reden: `Redactierecht gezet voor ${data.pv_naam} ${data.client_id}: ${aan}.`,
+      reden: `Redactierecht gezet voor ${data.pv_naam} ${data.client_id}: ${aan}.${mails.length ? ` Uitnodiging verstuurd voor ${mails.join(", ")}.` : ""}`,
       soort: "REDACTIE_RECHT",
       niveau: "HIGH",
       bron: "systeem",
     });
-    return json(data);
+    return json({ ...data, mails, mailFout });
   }
   const sleutel = String(body.sleutel || body.email || "").trim();
   const rol = body.rol === "beheerder" ? "beheerder" : "support";
