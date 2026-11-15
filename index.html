@@ -30,6 +30,21 @@
     th, td { border:1px solid var(--lijn); padding:6px; text-align:left; vertical-align:top; }
     .fout { color:var(--crit); } .ok { color:#86efac; }
     .tabs button.aan { outline:2px solid #fff; }
+    .mensen h1 { font: 600 22px/1.2 "Segoe UI", sans-serif; letter-spacing: -0.03em; margin: 0; }
+    .kopregel { display:flex; justify-content:space-between; align-items:center; gap:12px; margin: 4px 0 0; }
+    .twee { display:grid; grid-template-columns: minmax(280px, 1fr) minmax(300px, 1fr); gap:12px; align-items:start; }
+    .tweevelden { display:grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    .vinken { display:grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 4px 0 12px; }
+    .vink { display:flex; align-items:center; gap:8px; margin:0; color:var(--tekst); font-size:13px; }
+    input[type="checkbox"] { width:auto; margin:0; }
+    .zoekbalk { display:flex; gap:8px; margin-bottom:10px; }
+    .zoekbalk input { margin:0; }
+    .strak td, .strak th { font-family: "Segoe UI", sans-serif; }
+    tr.rijklik.aan td { background:#1e3a8a; }
+    .zacht { color:var(--muted); font-size:12px; }
+    .leeg { color:var(--muted); min-height:180px; }
+    details.kaart summary { cursor:pointer; font-weight:650; }
+    @media (max-width: 860px) { .twee, .tweevelden, .vinken { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -105,7 +120,7 @@
       mail: "mail.boaportaal.nl",
     }[bron] || bron || "systeem");
     let ik = null, tab = "zoek", dossier = null, overzicht = { inlog: [], register: [], ip_zichtbaar: false }, fout = "", melding = "", glas = false, blokken = [], blokQ = "", blokOpen = "";
-    let staf = [], stafQ = "", stafOpen = "";
+    let staf = [], stafQ = "", stafOpen = "", stafNieuw = false;
     let factor = null, mfaLet = "";
     let bronF = "", soortF = "", niveauF = "", dagenF = "30", qF = "";
     const query = new URLSearchParams(location.search);
@@ -335,67 +350,49 @@
 
     function medewerkers() {
       const open = staf.find((rij) => rij.client_id === stafOpen);
-      const vink = (naam, aan, label) => `<label><input type="checkbox" name="${naam}" ${aan ? "checked" : ""}> ${label}</label>`;
-      const profiel = open ? `<form id="staf-profiel" class="kaart">
-        <h2>${esc(open.pv_naam)} · ${esc(open.client_id)}</h2>
-        <label>PV-naam<input name="pv_naam" value="${esc(open.pv_naam)}" required></label>
-        <label>Rol<select name="rol"><option value="support" ${open.rol === "support" ? "selected" : ""}>Support</option><option value="beheerder" ${open.rol === "beheerder" ? "selected" : ""}>Beheerder</option></select></label>
-        <label>Zonder tweede stap<select name="mfa_uren">${[8, 24, 48, 72].map((uur) => `<option value="${uur}" ${Number(open.mfa_uren) === uur ? "selected" : ""}>${uur} uur</option>`).join("")}</select></label>
-        <label>Postbus, zonder @boaportaal.nl<input name="postbus" value="${esc(open.postbus || "")}" placeholder="joshua.bosma" autocapitalize="none" spellcheck="false"></label>
-        ${vink("actief", open.actief, "Account actief")}
-        ${vink("whatsapp", open.whatsapp, "WhatsApp")}
-        ${vink("feit", open.feit, "Feitcodes")}
-        ${vink("boom", open.boom, "Beslisbomen")}
-        ${vink("jargon", open.jargon, "Vakjargon")}
-        ${vink("trainer", open.trainer, "Trainer")}
-        <label>Reden<textarea name="reden" required minlength="12" placeholder="Aanpassing medewerkersprofiel, ticket M2611-0412"></textarea></label>
-        <button>Profiel opslaan</button>
-      </form>` : "";
-      const lijst = `<form id="staf-zoek" class="kaart">
-        <h1>Medewerkers</h1>
-        <p>Zoek een medewerker en pas het profiel aan. Elke wijziging komt in het auditlog.</p>
-        <label>Naam, Client-ID of postbus<input name="q" value="${esc(stafQ)}" placeholder="bosma of BP-3200-YE"></label>
-        <button class="sec" type="submit">Zoeken</button>
-        <table style="margin-top:12px"><thead><tr><th>Naam</th><th>Client-ID</th><th>Rol</th><th>Postbus</th><th>Status</th></tr></thead><tbody>
-          ${staf.length ? staf.map((rij) => `<tr class="rijklik" data-staf="${esc(rij.client_id)}"><td>${esc(rij.pv_naam)}</td><td>${esc(rij.client_id)}</td><td>${esc(rij.rol)}</td><td>${esc(rij.postbus || "—")}</td><td>${rij.actief ? "actief" : "uit"}</td></tr>`).join("") : `<tr><td colspan="5">Geen medewerkers in deze selectie.</td></tr>`}
-        </tbody></table>
-      </form>${profiel}`;
-      const portaal = `<h1>Account voor boaportaal.nl</h1>
-        <form id="gebruiker" class="kaart">
-          <p>Support en de hoofdbeheerder. Dit account kan in op boaportaal.nl. Het krijgt geen recht op de servicedesk.</p>
-          <label>PV-naam<input name="pv_naam" placeholder="DE VRIES, M.A." required></label>
-          <label>Zakelijk adres (alleen voor het aanmaken, daarna niet meer zichtbaar)<input type="email" name="email" required></label>
-          <label>Startwachtwoord<input type="password" name="password" required minlength="12"></label>
-          <button>Account aanmaken</button>
-        </form>`;
-      const uitnodiging = ik.rol === "beheerder" ? `<h2>Medewerker voor de servicedesk</h2><form id="medewerker" class="kaart">
-        <p>Alleen de hoofdbeheerder. Vul een bestaande Client-ID of een zakelijk adres in. Die persoon krijgt een uitnodiging voor mail, status, servicedesk en systeem.</p>
-        <label>Client-ID of zakelijk adres<input name="sleutel" required placeholder="BP-3200-YE of naam@organisatie.nl" autocapitalize="none" spellcheck="false"></label>
-        <label>PV-naam, alleen bij een adres dat nog geen account heeft<input name="pv_naam" placeholder="DE VRIES, M.A."></label>
-        <label>Startwachtwoord, alleen bij een nieuw adres<input type="password" name="password" minlength="12" autocomplete="new-password"></label>
-        <label>Rol<select name="rol"><option value="support">Support (1e lijn)</option><option value="beheerder">Beheerder (2e lijn)</option></select></label>
-        <label><input type="checkbox" name="whatsapp"> Ook toegang tot WhatsApp (social.boaportaal.nl)</label>
-        <label>Postbusnaam, leeg = Client-ID<input name="postbus" placeholder="joshua.bosma" autocapitalize="none" spellcheck="false"></label>
-        <button>Uitnodigen</button>
-      </form>
-      <h2>WhatsApp-rol</h2>
-      <form id="whatsapp" class="kaart">
-        <p>Alleen de hoofdbeheerder. Support of beheerder is niet genoeg. Deze vink geeft toegang tot de WhatsApp-inbox.</p>
-        <label>Client-ID<input name="sleutel" required placeholder="BP-3200-YE" autocapitalize="characters" spellcheck="false"></label>
-        <label><input type="checkbox" name="aan"> Toegang aan</label>
-        <button>Opslaan</button>
-      </form>
-      <h2>Redactierecht</h2>
-      <form id="redactie" class="kaart">
-        <p>Apart van support. Zonder vink komt iemand niet op de redactiesite, ook niet als die al medewerker is. Een wijziging staat pas op boaportaal.nl nadat de hoofdbeheerder die goedkeurt.</p>
-        <label>Client-ID<input name="sleutel" required placeholder="BP-3200-YE" autocapitalize="characters" spellcheck="false"></label>
-        <label><input type="checkbox" name="feit"> Feitcodes · feitcode.boaportaal.nl</label>
-        <label><input type="checkbox" name="boom"> Beslisbomen · beslisboom.boaportaal.nl</label>
-        <label><input type="checkbox" name="jargon"> Vakjargon · vakjargon.boaportaal.nl</label>
-        <label><input type="checkbox" name="trainer"> Trainer · trainer.boaportaal.nl</label>
-        <button>Rechten opslaan</button>
-      </form>` : "";
-      return `${ik.rol === "beheerder" ? lijst : ""}${portaal}${uitnodiging}<p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
+      const vink = (naam, aan, label) => `<label class="vink"><input type="checkbox" name="${naam}" ${aan ? "checked" : ""}> ${label}</label>`;
+      const velden = (rij, nieuw) => `<div class="tweevelden">
+          <label>PV-naam<input name="pv_naam" value="${esc(rij?.pv_naam || "")}" ${nieuw ? "" : "required"} placeholder="DE VRIES, M.A."></label>
+          <label>Rol<select name="rol"><option value="support" ${rij?.rol === "beheerder" ? "" : "selected"}>Support</option><option value="beheerder" ${rij?.rol === "beheerder" ? "selected" : ""}>Beheerder</option></select></label>
+          <label>Zonder tweede stap<select name="mfa_uren">${[8, 24, 48, 72].map((uur) => `<option value="${uur}" ${Number(rij?.mfa_uren || 8) === uur ? "selected" : ""}>${uur} uur</option>`).join("")}</select></label>
+          <label>Postbus<input name="postbus" value="${esc(rij?.postbus || "")}" placeholder="zonder @boaportaal.nl" autocapitalize="none" spellcheck="false"></label>
+        </div>
+        <div class="vinken">
+          ${nieuw ? "" : vink("actief", rij?.actief !== false, "Actief")}
+          ${vink("whatsapp", rij?.whatsapp, "WhatsApp")}
+          ${vink("feit", rij?.feit, "Feitcodes")}
+          ${vink("boom", rij?.boom, "Beslisbomen")}
+          ${vink("jargon", rij?.jargon, "Vakjargon")}
+          ${vink("trainer", rij?.trainer, "Trainer")}
+        </div>`;
+      const rechts = stafNieuw ? `<form id="medewerker" class="kaart">
+          <h2>Nieuwe medewerker</h2>
+          <label>Client-ID of adres<input name="sleutel" required placeholder="BP-3200-YE of naam@organisatie.nl" autocapitalize="none" spellcheck="false"></label>
+          <label>Startwachtwoord, alleen bij een nieuw adres<input type="password" name="password" minlength="12" autocomplete="new-password"></label>
+          ${velden(null, true)}
+          <button>Uitnodigen en mailen</button>
+        </form>` : open ? `<form id="staf-profiel" class="kaart">
+          <h2>${esc(open.pv_naam)}</h2>
+          <p class="zacht">${esc(open.client_id)}</p>
+          ${velden(open, false)}
+          <label>Reden<textarea name="reden" required minlength="12" placeholder="Waarom deze aanpassing"></textarea></label>
+          <button>Opslaan</button>
+        </form>` : `<div class="kaart leeg"><p>Kies een medewerker links, of voeg iemand toe. De uitnodiging gaat per mail weg.</p></div>`;
+      const lijst = `<div class="kaart">
+          <form id="staf-zoek" class="zoekbalk"><input name="q" value="${esc(stafQ)}" placeholder="Zoek naam, Client-ID of postbus"><button class="sec" type="submit">Zoek</button></form>
+          <table class="strak"><thead><tr><th>Naam</th><th>Rol</th><th>Postbus</th></tr></thead><tbody>
+            ${staf.length ? staf.map((rij) => `<tr class="rijklik ${rij.client_id === stafOpen ? "aan" : ""}" data-staf="${esc(rij.client_id)}"><td><b>${esc(rij.pv_naam)}</b><br><span class="zacht">${esc(rij.client_id)}${rij.actief ? "" : " · uit"}</span></td><td>${esc(rij.rol)}</td><td>${esc(rij.postbus || "—")}</td></tr>`).join("") : `<tr><td colspan="3">Geen medewerkers in deze selectie.</td></tr>`}
+          </tbody></table>
+        </div>`;
+      const portaal = `<details class="kaart"><summary>Alleen een portaalaccount, geen medewerker</summary>
+          <form id="gebruiker" style="margin-top:12px">
+            <label>PV-naam<input name="pv_naam" placeholder="DE VRIES, M.A." required></label>
+            <label>Zakelijk adres<input type="email" name="email" required></label>
+            <label>Startwachtwoord<input type="password" name="password" required minlength="12"></label>
+            <button class="sec">Account aanmaken</button>
+          </form>
+        </details>`;
+      return `<div class="mensen"><div class="kopregel"><h1>Medewerkers</h1>${ik.rol === "beheerder" ? `<button type="button" id="nieuw" class="sec">Nieuwe medewerker</button>` : ""}</div>${fout ? `<p class="fout">${esc(fout)}</p>` : ""}${melding ? `<p class="ok">${esc(melding)}</p>` : ""}<div class="twee">${ik.rol === "beheerder" ? `${lijst}${rechts}` : ""}</div>${portaal}</div>`;
     }
 
     function auditHtml() {
@@ -713,12 +710,26 @@
         const res = await fetch("/.netlify/functions/medewerker", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
-          body: JSON.stringify({ pv_naam: f.get("pv_naam"), sleutel: f.get("sleutel"), password: f.get("password"), rol: f.get("rol"), postbus: f.get("postbus"), whatsapp: f.get("whatsapp") === "on" }),
+          body: JSON.stringify({
+            pv_naam: f.get("pv_naam"),
+            sleutel: f.get("sleutel"),
+            password: f.get("password"),
+            rol: f.get("rol"),
+            postbus: f.get("postbus"),
+            mfa_uren: Number(f.get("mfa_uren") || 8),
+            whatsapp: f.get("whatsapp") === "on",
+            feit: f.get("feit") === "on",
+            boom: f.get("boom") === "on",
+            jargon: f.get("jargon") === "on",
+            trainer: f.get("trainer") === "on",
+          }),
         });
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) { fout = body.fout || "Uitnodigen lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; }
-        else { fout = ""; melding = body.mail ? `${body.pv_naam} · ${body.client_id} is uitgenodigd. De mail naar de medewerkersportalen is verstuurd.` : `${body.pv_naam} · ${body.client_id} staat erin. ${body.mailFout || "De uitnodigingsmail is niet verstuurd."}`; e.target.reset(); }
-        teken();
+        if (!res.ok) { fout = body.fout || "Uitnodigen lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; teken(); return; }
+        fout = "";
+        melding = body.mail ? `${body.pv_naam} · ${body.client_id} is uitgenodigd. De mail is verstuurd.` : `${body.pv_naam} · ${body.client_id} staat erin. ${body.mailFout || "De uitnodigingsmail is niet verstuurd."}`;
+        stafNieuw = false;
+        await laadStaf();
       });
       document.getElementById("whatsapp")?.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -832,7 +843,8 @@
         stafQ = String(new FormData(e.target).get("q") || "");
         await laadStaf();
       });
-      document.querySelectorAll("[data-staf]").forEach((rij) => rij.addEventListener("click", () => { stafOpen = rij.dataset.staf; teken(); }));
+      document.querySelectorAll("[data-staf]").forEach((rij) => rij.addEventListener("click", () => { stafOpen = rij.dataset.staf; stafNieuw = false; teken(); }));
+      document.getElementById("nieuw")?.addEventListener("click", () => { stafNieuw = true; stafOpen = ""; teken(); });
       document.getElementById("staf-profiel")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         const f = new FormData(e.target);

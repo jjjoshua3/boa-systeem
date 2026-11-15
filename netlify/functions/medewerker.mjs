@@ -51,9 +51,12 @@ export default async (request) => {
   if (body.actie === "lijst") {
     const q = String(body.q || "").trim().toLowerCase();
     const { data, error } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam, rol, actief, whatsapp, mag_feit, mag_boom, mag_jargon, mag_trainer").order("pv_naam");
-    if (error) return json({ fout: "De medewerkers zijn niet geladen." }, 500);
+    const bron = error
+      ? await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam, rol, actief").order("pv_naam")
+      : { data, error: null };
+    if (bron.error) return json({ fout: "De medewerkers zijn niet geladen." }, 500);
     const rijen = [];
-    for (const rij of data || []) {
+    for (const rij of bron.data || []) {
       const ident = await poort.sb.from("boa_identiteit").select("mfa_uren").eq("user_id", rij.user_id).maybeSingle();
       const user = await poort.sb.auth.admin.getUserById(rij.user_id);
       const postbus = String(user.data?.user?.user_metadata?.mail_local || "");
@@ -257,26 +260,20 @@ export default async (request) => {
   const ident = await zorgIdentiteit(poort.sb, user, pv);
   if (!ident?.client_id) return json({ fout: "Client-ID niet uitgegeven." }, 500);
   pv = ident.pv_naam || pv;
-  const { data: bestaand } = await poort.sb.from("boa_medewerker").select("user_id").eq("user_id", user.id).maybeSingle();
-  const rij = { user_id: user.id, client_id: ident.client_id, pv_naam: pv, rol, actief: true, whatsapp: Boolean(body.whatsapp) };
-  const wijziging = { pv_naam: pv, rol, actief: true };
-  if (body.whatsapp) wijziging.whatsapp = true;
-  const { error: medFout } = bestaand
-    ? await poort.sb.from("boa_medewerker").update(wijziging).eq("user_id", user.id)
-    : await poort.sb.from("boa_medewerker").insert(rij);
-  if (medFout) return json({ fout: "Medewerkersrol niet gekoppeld." }, 500);
+  const basis = { user_id: user.id, client_id: ident.client_id, pv_naam: pv, rol, actief: true };
+  const { error: medFout } = await poort.sb.from("boa_medewerker").upsert(basis, { onConflict: "user_id" });
+  if (medFout) return json({ fout: `Medewerkersrol niet gekoppeld: ${medFout.message}` }, 500);
+  await poort.sb.from("boa_medewerker").update({
+    whatsapp: Boolean(body.whatsapp),
+    mag_feit: Boolean(body.feit),
+    mag_boom: Boolean(body.boom),
+    mag_jargon: Boolean(body.jargon),
+    mag_trainer: Boolean(body.trainer),
+  }).eq("user_id", user.id);
+  const uren = [8, 24, 48, 72].includes(Number(body.mfa_uren)) ? Number(body.mfa_uren) : 8;
+  await poort.sb.from("boa_identiteit").update({ mfa_uren: uren }).eq("user_id", user.id);
   await poort.sb.auth.admin.updateUserById(user.id, {
     user_metadata: { ...(user.user_metadata || {}), naam: pv, rol, mail_local: postbus || user.user_metadata?.mail_local || ident.client_id.toLowerCase(), client_id: ident.client_id },
-  });
-  await poort.sb.from("boa_audit").insert({
-    beheerder_id: poort.med.client_id,
-    beheerder_naam: "hoofdbeheerder",
-    doel_client_id: ident.client_id,
-    doel_pv_naam: pv,
-    ticketnummer: "",
-    reden: "Uitgenodigd voor de medewerkersportalen",
-    soort: "MEDEWERKER_AANGEMAAKT",
-    niveau: "CRITICAL",
   });
   let mail = false;
   let mailFout = "";
@@ -284,8 +281,18 @@ export default async (request) => {
     const verzonden = await verstuurUitnodiging({ naar: user.email, naam: pv });
     mail = Boolean(verzonden.ok);
     mailFout = verzonden.fout || "";
-  } catch {
-    mailFout = "De uitnodiging is niet verstuurd. Controleer het wachtwoord van onboarding@boaportaal.nl op de systeem-site.";
+  } catch (err) {
+    mailFout = err?.message || "De uitnodiging is niet verstuurd. Controleer het wachtwoord van onboarding@boaportaal.nl op de systeem-site.";
   }
+  await poort.sb.from("boa_audit").insert({
+    beheerder_id: poort.med.client_id,
+    beheerder_naam: "hoofdbeheerder",
+    doel_client_id: ident.client_id,
+    doel_pv_naam: pv,
+    ticketnummer: "",
+    reden: mail ? "Uitgenodigd voor de medewerkersportalen. Mail verstuurd." : `Uitgenodigd voor de medewerkersportalen. Mail niet verstuurd: ${mailFout}`.slice(0, 240),
+    soort: "MEDEWERKER_AANGEMAAKT",
+    niveau: "CRITICAL",
+  });
   return json({ client_id: ident.client_id, pv_naam: pv, rol, mail, mailFout });
 };
