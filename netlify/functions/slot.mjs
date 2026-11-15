@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { ipVan, noteerPoging } from "./ip.mjs";
 
 const UUR = 60 * 60 * 1000;
 const DRIE_DAGEN = 3 * 24 * UUR;
@@ -73,6 +74,7 @@ export default async (request) => {
     const tekst = error?.message || "";
     if (/ban/i.test(tekst)) return antwoord(request, { fout: rij?.slot_tot ? tijdelijk(rij.slot_tot) : PERMANENT }, 423);
     if (!rij || !/invalid|credential/i.test(tekst)) {
+      if (/invalid|credential/i.test(tekst)) await noteerPoging(ipVan(request), "portaal");
       return antwoord(request, { fout: "Onjuist e-mailadres of wachtwoord." }, 401);
     }
     const nu = Date.now();
@@ -80,6 +82,7 @@ export default async (request) => {
     if (rij.slot_straf && tot && tot <= nu) {
       await sb.from("boa_identiteit").update({ locked: true, mislukt: 0, mislukt_sinds: null, slot_tot: null, slot_straf: false }).eq("user_id", rij.user_id);
       await sb.auth.admin.updateUserById(rij.user_id, { ban_duration: "876000h" });
+      await noteerPoging(ipVan(request), "portaal");
       return antwoord(request, { fout: PERMANENT }, 423);
     }
     let sinds = rij.mislukt_sinds ? new Date(rij.mislukt_sinds).getTime() : 0;
@@ -99,9 +102,11 @@ export default async (request) => {
         slot_straf: true,
       }).eq("user_id", rij.user_id);
       await sb.auth.admin.updateUserById(rij.user_id, { ban_duration: "60m" });
+      await noteerPoging(ipVan(request), "portaal");
       return antwoord(request, { fout: tijdelijk(einde) }, 423);
     }
     await sb.from("boa_identiteit").update({ mislukt, mislukt_sinds: new Date(sinds).toISOString() }).eq("user_id", rij.user_id);
+    await noteerPoging(ipVan(request), "portaal");
     const rest = 3 - mislukt;
     return antwoord(request, { fout: `Onjuist e-mailadres of wachtwoord. Nog ${rest} ${rest === 1 ? "poging" : "pogingen"} binnen 3 dagen, daarna 60 minuten dicht.` }, 401);
   }

@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="nl">
 <head>
+  <script>(function(){var h=document.documentElement;h.style.background="#1a0000";h.style.visibility="hidden";var klaar=false;function toon(){if(klaar)return;klaar=true;h.style.visibility="";h.style.background="";}setTimeout(toon,1800);fetch("https://systeem.boaportaal.nl/.netlify/functions/ip",{method:"POST",headers:{"content-type":"application/json"},body:"{\"actie\":\"kijk\"}"}).then(function(r){return r.json()}).then(function(d){if(d&&d.blok){location.replace("https://ip.boaportaal.nl/");return;}toon();}).catch(toon);})();</script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Systeembeheer & audit | BOA Portaal</title>
@@ -24,6 +25,8 @@
     .meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; }
     .meta div { border:1px solid var(--lijn); padding:8px; }
     table { width:100%; border-collapse:collapse; }
+    tr.rijklik { cursor:pointer; }
+    tr.rijklik:hover td { background:#1e293b; }
     th, td { border:1px solid var(--lijn); padding:6px; text-align:left; vertical-align:top; }
     .fout { color:var(--crit); } .ok { color:#86efac; }
     .tabs button.aan { outline:2px solid #fff; }
@@ -78,7 +81,7 @@
     const sb = createClient(URL, KEY);
     const app = document.querySelector("#app");
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&" + "amp;", "<": "&" + "lt;", ">": "&" + "gt;", '"': "&" + "quot;", "'": "&" + "#39;"}[c]));
-    let ik = null, tab = "zoek", dossier = null, overzicht = { inlog: [], register: [], ip_zichtbaar: false }, fout = "", melding = "", glas = false;
+    let ik = null, tab = "zoek", dossier = null, overzicht = { inlog: [], register: [], ip_zichtbaar: false }, fout = "", melding = "", glas = false, blokken = [], blokQ = "", blokOpen = "";
     let factor = null, mfaLet = "";
     let bronF = "", soortF = "", niveauF = "", dagenF = "30", qF = "";
     const query = new URLSearchParams(location.search);
@@ -358,11 +361,47 @@
         <button class="sec ${tab==="zoek"?"aan":""}" data-tab="zoek">Opvragen</button>
         <button class="sec ${tab==="mensen"?"aan":""}" data-tab="mensen">Accounts</button>
         <button class="sec ${tab==="audit"?"aan":""}" data-tab="audit">Audit</button>
+        ${ik.rol === "beheerder" ? `<button class="sec ${tab==="blok"?"aan":""}" data-tab="blok">Blokkades</button>` : ""}
         <button class="sec" id="uit">Afmelden ${esc(ik.client_id)}</button>
       </div>
       <p>${esc(ik.rol)} · ${esc(ik.pv_naam)} · ${esc(ik.client_id)}</p>
       ${mfaLet ? `<p class="ok">${esc(mfaLet)}</p>` : ""}
-      ${tab==="zoek" ? zoek() : tab==="mensen" ? medewerkers() : auditHtml()}`;
+      ${tab==="zoek" ? zoek() : tab==="mensen" ? medewerkers() : tab==="blok" ? blokHtml() : auditHtml()}`;
+    }
+
+    function blokHtml() {
+      const open = blokken.find((rij) => rij.referentie === blokOpen);
+      return `<form id="blok-zoek" class="kaart">
+        <h2>IP-blokkades</h2>
+        <p>Zoek op de referentie van het rode scherm, of op het IP-adres. Alleen de hoofdbeheerder ziet waarom een adres dicht zit.</p>
+        <label>Referentie of IP<input name="q" value="${esc(blokQ)}" placeholder="SOC- of 185."></label>
+        <button>Zoeken</button>
+      </form>
+      <table><thead><tr><th>Referentie</th><th>IP</th><th>Status</th><th>Pogingen</th><th>Gezien op</th><th>Moment</th></tr></thead><tbody>
+        ${blokken.length ? blokken.map((rij) => `<tr class="rijklik" data-ref="${esc(rij.referentie)}"><td>${esc(rij.referentie)}</td><td>${esc(rij.ip)}</td><td>${rij.actief ? "GEBLOKKEERD" : "vrij"}</td><td>${esc(rij.pogingen)}</td><td>${esc(rij.bron || "—")}</td><td>${esc(new Date(rij.gemaakt).toLocaleString("nl-NL"))}</td></tr>`).join("") : `<tr><td colspan="6">Geen blokkades.</td></tr>`}
+      </tbody></table>
+      ${open ? `<div class="kaart"><h2>${esc(open.referentie)}</h2>
+        <p>IP ${esc(open.ip)} · ${open.actief ? "actief" : "opgeheven"} · door ${esc(open.door || "SOC")}</p>
+        <p>${esc(open.reden)}</p>
+        ${open.opgeheven ? `<p>Vrijgegeven ${esc(new Date(open.opgeheven).toLocaleString("nl-NL"))} door ${esc(open.opgeheven_door || "—")}.</p>` : `<button id="vrij" type="button" class="sec">Deblokkeren</button>`}
+      </div>` : ""}
+      <form id="blok-extra" class="kaart">
+        <h2>Extra IP blokkeren</h2>
+        <label>IP-adres<input name="ip" required placeholder="185.0.0.0"></label>
+        <label>Waarom<textarea name="reden" required minlength="12" placeholder="Zelfde persoon, ander adres na SOC-referentie"></textarea></label>
+        <button>Blokkeren</button>
+      </form>`;
+    }
+
+    async function ipBeheer(body) {
+      const res = await fetch("/.netlify/functions/ip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.fout || "De blokkade is niet opgehaald.");
+      return data;
     }
 
     async function inlogLijst(extra) {
@@ -444,6 +483,17 @@
           fout = lijst.fout;
         }
       }
+      if (tab === "blok" && ik.rol === "beheerder") {
+        try {
+          const data = await ipBeheer({ actie: blokQ ? "zoek" : "lijst", q: blokQ });
+          blokken = data.blokken || [];
+        } catch (err) {
+          fout = err.message;
+          blokken = [];
+        }
+      } else if (tab === "blok") {
+        tab = "zoek";
+      }
       app.innerHTML = schil();
       bind();
     }
@@ -451,6 +501,33 @@
     function bind() {
       document.getElementById("uit")?.addEventListener("click", async () => { sessionStorage.removeItem("boa-ok-beheer"); await sb.auth.signOut(); ik = null; dossier = null; factor = null; teken(); });
       document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; fout = ""; melding = ""; teken(); }));
+      document.getElementById("blok-zoek")?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        blokQ = String(new FormData(e.target).get("q") || "").trim();
+        blokOpen = "";
+        teken();
+      });
+      document.querySelectorAll("[data-ref]").forEach((rij) => rij.addEventListener("click", () => { blokOpen = rij.dataset.ref; teken(); }));
+      document.getElementById("vrij")?.addEventListener("click", async () => {
+        try {
+          await ipBeheer({ actie: "vrij", referentie: blokOpen });
+          melding = `${blokOpen} is vrijgegeven.`;
+          fout = "";
+          teken();
+        } catch (err) { fout = err.message; teken(); }
+      });
+      document.getElementById("blok-extra")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        try {
+          const data = await ipBeheer({ actie: "blokkeer", ip: f.get("ip"), reden: f.get("reden") });
+          melding = `${data.blok.ip} staat dicht onder ${data.blok.referentie}.`;
+          fout = "";
+          blokQ = data.blok.referentie;
+          blokOpen = data.blok.referentie;
+          teken();
+        } catch (err) { fout = err.message; teken(); }
+      });
       const form = document.getElementById("zoek");
       const knop = document.getElementById("zoek-knop");
       const sync = () => {
