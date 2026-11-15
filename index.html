@@ -706,7 +706,17 @@
       });
       document.getElementById("medewerker")?.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const f = new FormData(e.target);
+        const form = e.target;
+        if (form.dataset.bezig === "1") return;
+        form.dataset.bezig = "1";
+        const knop = form.querySelector("button");
+        knop.disabled = true;
+        knop.textContent = "Aangemaakt";
+        const status = document.createElement("p");
+        status.className = "ok";
+        status.textContent = "Medewerker is aangemaakt.";
+        form.insertBefore(status, form.firstChild);
+        const f = new FormData(form);
         const res = await fetch("/.netlify/functions/medewerker", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
@@ -727,7 +737,7 @@
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { fout = body.fout || "Uitnodigen lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; teken(); return; }
         fout = "";
-        melding = body.mail ? `${body.pv_naam} · ${body.client_id} is uitgenodigd. De mail is verstuurd.` : `${body.pv_naam} · ${body.client_id} staat erin. ${body.mailFout || "De uitnodigingsmail is niet verstuurd."}`;
+        melding = `Medewerker is aangemaakt. ${body.pv_naam} · ${body.client_id}. ${body.mail ? "De mail is verstuurd." : (body.mailFout || "De uitnodigingsmail is niet verstuurd.")}`;
         stafNieuw = false;
         await laadStaf();
       });
