@@ -81,6 +81,7 @@
     const sb = createClient(URL, KEY);
     const app = document.querySelector("#app");
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&" + "amp;", "<": "&" + "lt;", ">": "&" + "gt;", '"': "&" + "quot;", "'": "&" + "#39;"}[c]));
+    const aanUit = (aan) => aan ? "aan" : "uit";
     let ik = null, tab = "zoek", dossier = null, overzicht = { inlog: [], register: [], ip_zichtbaar: false }, fout = "", melding = "", glas = false, blokken = [], blokQ = "", blokOpen = "";
     let factor = null, mfaLet = "";
     let bronF = "", soortF = "", niveauF = "", dagenF = "30", qF = "";
@@ -302,6 +303,16 @@
         <label>Client-ID<input name="sleutel" required placeholder="BP-3200-YE" autocapitalize="characters" spellcheck="false"></label>
         <label><input type="checkbox" name="aan"> Toegang aan</label>
         <button>Opslaan</button>
+      </form>
+      <h2>Redactierecht</h2>
+      <form id="redactie" class="kaart">
+        <p>Apart van support. Zonder vink komt iemand niet op de redactiesite, ook niet als die al medewerker is. Een wijziging staat pas op boaportaal.nl nadat de hoofdbeheerder die goedkeurt.</p>
+        <label>Client-ID<input name="sleutel" required placeholder="BP-3200-YE" autocapitalize="characters" spellcheck="false"></label>
+        <label><input type="checkbox" name="feit"> Feitcodes · feitcode.boaportaal.nl</label>
+        <label><input type="checkbox" name="boom"> Beslisbomen · beslisboom.boaportaal.nl</label>
+        <label><input type="checkbox" name="jargon"> Vakjargon · vakjargon.boaportaal.nl</label>
+        <label><input type="checkbox" name="trainer"> Trainer · trainer.boaportaal.nl</label>
+        <button>Rechten opslaan</button>
       </form>` : "";
       return `${portaal}${staf}<p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
     }
@@ -627,6 +638,20 @@
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { fout = body.fout || "Opslaan lukt niet."; melding = ""; }
         else { fout = ""; melding = body.whatsapp ? `${body.pv_naam} · ${body.client_id} mag in de WhatsApp-inbox.` : `${body.pv_naam} · ${body.client_id} heeft geen WhatsApp-toegang meer.`; }
+        teken();
+      });
+      document.getElementById("redactie")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const res = await fetch("/.netlify/functions/medewerker", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ actie: "redactie", sleutel: f.get("sleutel"), feit: f.get("feit") === "on", boom: f.get("boom") === "on", jargon: f.get("jargon") === "on", trainer: f.get("trainer") === "on" }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "Opslaan mislukt."; melding = ""; teken(); return; }
+        fout = "";
+        melding = `${body.pv_naam} · ${body.client_id}: feitcodes ${aanUit(body.mag_feit)}, beslisbomen ${aanUit(body.mag_boom)}, vakjargon ${aanUit(body.mag_jargon)}, trainer ${aanUit(body.mag_trainer)}.`;
         teken();
       });
       document.getElementById("filter")?.addEventListener("submit", (e) => {

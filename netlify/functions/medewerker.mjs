@@ -65,6 +65,19 @@ export default async (request) => {
     });
     return json(data);
   }
+  if (body.actie === "redactie") {
+    const cid = String(body.sleutel || "").trim().toUpperCase();
+    if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Vul een Client-ID in." }, 400);
+    const vlaggen = {
+      mag_feit: Boolean(body.feit),
+      mag_boom: Boolean(body.boom),
+      mag_jargon: Boolean(body.jargon),
+      mag_trainer: Boolean(body.trainer),
+    };
+    const { data, error } = await poort.sb.from("boa_medewerker").update(vlaggen).eq("client_id", cid).select("client_id, pv_naam, mag_feit, mag_boom, mag_jargon, mag_trainer").maybeSingle();
+    if (error || !data) return json({ fout: error ? "Draai schema-0014.sql in Supabase." : "Geen medewerker met die Client-ID." }, error ? 500 : 404);
+    return json(data);
+  }
   const sleutel = String(body.sleutel || body.email || "").trim();
   const rol = body.rol === "beheerder" ? "beheerder" : "support";
   const postbus = String(body.postbus || "").trim().toLowerCase();
