@@ -1,7 +1,8 @@
 import { beheerder } from "./lib.mjs";
 
-const DREMPEL = 5;
-const VENSTER = 60 * 60 * 1000;
+const VENSTER = 15 * 60 * 1000;
+const DREMPEL_NAMEN = 8;
+const DREMPEL_ONBEKEND = 5;
 
 function koppen(request) {
   const bron = request.headers.get("origin") || "";
@@ -64,28 +65,47 @@ async function bestaand(sb, ip) {
   return { rij: data };
 }
 
-export async function noteerPoging(ip, bron) {
+function schoonNaam(waarde) {
+  return String(waarde || "").trim().toLowerCase().replace(/[\r\n<>]/g, "").slice(0, 120);
+}
+
+export async function noteerPoging(ip, bron, naam, bekend) {
   const schoon = schoonIp(ip);
-  if (!schoon) return { blok: false, ip: "" };
+  const wie = schoonNaam(naam);
+  if (!schoon || wie.length < 2) return { blok: false, ip: schoon || "" };
   const sb = await db();
   if (!sb) return { blok: false, ip: schoon };
   const nu = await bestaand(sb, schoon);
   if (nu.fout) return { blok: false, ip: schoon };
   if (nu.rij) return naarBuiten(nu.rij, schoon);
-  const insert = await sb.from("boa_ip_poging").insert({ ip: schoon, bron: String(bron || "onbekend").slice(0, 40) });
+  const regel = { ip: schoon, bron: String(bron || "onbekend").slice(0, 40), naam: wie };
+  if (bekend === true || bekend === false) regel.bekend = bekend;
+  const insert = await sb.from("boa_ip_poging").insert(regel);
   if (insert.error) return { blok: false, ip: schoon };
   const sinds = new Date(Date.now() - VENSTER).toISOString();
-  const { data: pogingen } = await sb.from("boa_ip_poging").select("bron").eq("ip", schoon).gte("moment", sinds);
-  const lijst = pogingen || [];
-  if (lijst.length < DREMPEL) return { blok: false, ip: schoon, open: DREMPEL - lijst.length };
-  const bronnen = [...new Set(lijst.map((regel) => regel.bron).filter(Boolean))].join(", ") || bron;
-  const reden = `${lijst.length} mislukte aanmeldpogingen binnen een uur. Gezien op: ${bronnen}.`;
+  const { data: pogingen } = await sb.from("boa_ip_poging").select("naam, bekend, bron").eq("ip", schoon).gte("moment", sinds);
+  const perNaam = new Map();
+  for (const poging of pogingen || []) {
+    const sleutel = schoonNaam(poging.naam);
+    if (sleutel.length < 2) continue;
+    const had = perNaam.get(sleutel) || { bekend: null };
+    if (poging.bekend === false) had.bekend = false;
+    else if (poging.bekend === true && had.bekend !== false) had.bekend = true;
+    perNaam.set(sleutel, had);
+  }
+  const namen = [...perNaam.keys()];
+  const onbekend = namen.filter((sleutel) => perNaam.get(sleutel).bekend === false);
+  if (namen.length < DREMPEL_NAMEN && onbekend.length < DREMPEL_ONBEKEND) return { blok: false, ip: schoon };
+  const bronnen = [...new Set((pogingen || []).map((poging) => poging.bron).filter(Boolean))].join(", ") || bron;
+  const reden = onbekend.length >= DREMPEL_ONBEKEND && namen.length < DREMPEL_NAMEN
+    ? `${onbekend.length} onbekende aanmeldnamen in 15 minuten vanaf één IP. Die namen bestaan niet. Patroon: afproberen of vervalsen. Namen: ${onbekend.slice(0, 12).join(", ")}. Gezien op: ${bronnen}.`
+    : `${namen.length} verschillende aanmeldnamen in 15 minuten vanaf één IP. Bekende en onbekende accounts door elkaar. Patroon: accounts afproberen. Namen: ${namen.slice(0, 12).join(", ")}. Gezien op: ${bronnen}.`;
   const { data } = await sb.from("boa_ip_blok").insert({
     ip: schoon,
     referentie: referentie(),
     reden,
     bron: bronnen,
-    pogingen: lijst.length,
+    pogingen: namen.length,
     door: "SOC",
   }).select("ip, referentie, gemaakt, actief").single();
   return naarBuiten(data, schoon);
@@ -110,7 +130,7 @@ export default async function handler(request) {
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
     const token = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
     const ip = token && token === key ? schoonIp(body.ip) || gezien : gezien;
-    const uit = await noteerPoging(ip, body.bron || "onbekend");
+    const uit = await noteerPoging(ip, body.bron || "onbekend", body.naam, body.bekend);
     return antwoord(request, uit);
   }
 

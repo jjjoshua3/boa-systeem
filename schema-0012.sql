@@ -4,6 +4,8 @@ create table if not exists public.boa_ip_poging (
   id bigint generated always as identity primary key,
   ip text not null,
   bron text not null,
+  naam text not null default '',
+  bekend boolean,
   moment timestamptz not null default now()
 );
 

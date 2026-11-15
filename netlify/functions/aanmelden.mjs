@@ -17,7 +17,7 @@ export default async (request) => {
     if (!beheer) return json({ fout: "Voor een Client-ID mist de service-sleutel op de systeem-site. Log in met je zakelijke adres." }, 503);
     const { data: ident } = await beheer.from("boa_identiteit").select("user_id").eq("client_id", sleutel.toUpperCase()).maybeSingle();
     if (!ident?.user_id) {
-      await noteerPoging(ipVan(request), "systeem");
+      await noteerPoging(ipVan(request), "systeem", sleutel, false);
       return json({ fout: "Deze Client-ID en dit wachtwoord horen niet bij elkaar." }, 401);
     }
     const user = await beheer.auth.admin.getUserById(ident.user_id);
@@ -29,7 +29,7 @@ export default async (request) => {
   const sb = createClient(URL, PUB, { auth: { persistSession: false, autoRefreshToken: false } });
   const inn = await sb.auth.signInWithPassword({ email, password });
   if (inn.error || !inn.data.session) {
-    await noteerPoging(ipVan(request), "systeem");
+    await noteerPoging(ipVan(request), "systeem", /^BP-\d{4}-[A-Z]{2}$/i.test(sleutel) ? sleutel : email, /^BP-\d{4}-[A-Z]{2}$/i.test(sleutel) ? true : null);
     return json({ fout: "Deze gegevens horen niet bij elkaar." }, 401);
   }
   return json({
