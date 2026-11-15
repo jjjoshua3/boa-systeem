@@ -1,4 +1,4 @@
-import { beheerder, json, maakPostbus, nieuwPostbusWachtwoord, verstuurUitnodiging, verstuurRedactie } from "./lib.mjs";
+import { beheerder, json, maakPostbus, nieuwPostbusWachtwoord, verwijderPostbus, verstuurUitnodiging, verstuurRedactie } from "./lib.mjs";
 
 function naarPv(raw) {
   const t = String(raw || "").trim().replace(/\s+/g, " ");
@@ -121,6 +121,35 @@ export default async (request) => {
       niveau: "CRITICAL",
     });
     return json({ ok: true });
+  }
+  if (body.actie === "weg") {
+    const cid = String(body.client_id || "").trim().toUpperCase();
+    const reden = String(body.reden || "").trim();
+    if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Geen geldige Client-ID." }, 400);
+    if (reden.length < 12) return json({ fout: "De reden is te kort." }, 400);
+    if (cid === poort.med.client_id) return json({ fout: "Je kunt jezelf niet als medewerker verwijderen." }, 400);
+    const { data: huidig } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam").eq("client_id", cid).maybeSingle();
+    if (!huidig) return json({ fout: "Geen medewerker met die Client-ID." }, 404);
+    const user = await poort.sb.auth.admin.getUserById(huidig.user_id);
+    const meta = { ...(user.data?.user?.user_metadata || {}) };
+    const local = String(meta.mail_local || huidig.client_id || "").toLowerCase();
+    delete meta.mail_local;
+    delete meta.rol;
+    if (user.data?.user) await poort.sb.auth.admin.updateUserById(huidig.user_id, { user_metadata: meta });
+    const { error } = await poort.sb.from("boa_medewerker").delete().eq("client_id", cid);
+    if (error) return json({ fout: "De medewerker is niet verwijderd." }, 500);
+    const post = await verwijderPostbus(local);
+    await poort.sb.from("boa_audit").insert({
+      beheerder_id: poort.med.client_id,
+      beheerder_naam: "hoofdbeheerder",
+      doel_client_id: cid,
+      doel_pv_naam: huidig.pv_naam,
+      ticketnummer: "",
+      reden: reden.slice(0, 240),
+      soort: "CRITICAL_AUTH_CHANGE",
+      niveau: "CRITICAL",
+    });
+    return json({ ok: true, postbus: post.ok ? "" : post.fout });
   }
   if (body.actie === "whatsapp") {
     const cid = String(body.sleutel || "").trim().toUpperCase();

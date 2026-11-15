@@ -20,6 +20,7 @@
     .rij { display:flex; flex-wrap:wrap; gap:8px; }
     button { font:inherit; cursor:pointer; background:var(--actie); color:#fff; border:0; padding:8px 12px; }
     button.sec { background:transparent; border:1px solid var(--lijn); color:var(--tekst); }
+    button.gevaar { background:#7f1d1d; }
     button:disabled { opacity:.4; cursor:not-allowed; }
     .balk { background:#7f1d1d; color:#fff; padding:12px; border:1px solid #fecaca; }
     .meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px; }
@@ -377,7 +378,12 @@
           ${velden(open, false)}
           <label>Reden<textarea name="reden" required minlength="12" placeholder="Waarom deze aanpassing"></textarea></label>
           <button>Opslaan</button>
-        </form>` : `<div class="kaart leeg"><p>Kies een medewerker links, of voeg iemand toe. De uitnodiging gaat per mail weg.</p></div>`;
+        </form>
+        ${open.client_id === ik.client_id ? "" : `<form id="staf-weg" class="kaart">
+          <p class="zacht">Het portaalaccount blijft. De medewerkersrol en de postbus gaan weg.</p>
+          <label>Reden<textarea name="reden" required minlength="12" placeholder="Waarom deze medewerker weggaat"></textarea></label>
+          <button class="gevaar" type="submit">Medewerker verwijderen</button>
+        </form>`}` : `<div class="kaart leeg"><p>Kies een medewerker links, of voeg iemand toe. De uitnodiging gaat per mail weg.</p></div>`;
       const lijst = `<div class="kaart">
           <form id="staf-zoek" class="zoekbalk"><input name="q" value="${esc(stafQ)}" placeholder="Zoek naam, Client-ID of postbus"><button class="sec" type="submit">Zoek</button></form>
           <table class="strak"><thead><tr><th>Naam</th><th>Rol</th><th>Postbus</th></tr></thead><tbody>
@@ -881,6 +887,32 @@
         if (!res.ok) { fout = body.fout || "Het profiel is niet opgeslagen."; melding = ""; teken(); return; }
         fout = "";
         melding = "Het medewerkersprofiel is opgeslagen en gelogd.";
+        await laadStaf();
+      });
+      document.getElementById("staf-weg")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        if (form.dataset.bezig === "1") return;
+        form.dataset.bezig = "1";
+        const knop = form.querySelector("button");
+        knop.disabled = true;
+        knop.textContent = "Verwijderd";
+        const status = document.createElement("p");
+        status.className = "ok";
+        status.textContent = "Medewerker is verwijderd. Het portaalaccount blijft.";
+        form.insertBefore(status, form.firstChild);
+        const f = new FormData(form);
+        const weg = stafOpen;
+        const res = await fetch("/.netlify/functions/medewerker", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ actie: "weg", client_id: weg, reden: f.get("reden") }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "De medewerker is niet verwijderd."; melding = ""; teken(); return; }
+        fout = "";
+        melding = `Medewerker ${weg} is verwijderd. Het portaalaccount blijft.${body.postbus ? ` ${body.postbus}` : ""}`;
+        stafOpen = "";
         await laadStaf();
       });
       document.getElementById("mfauren")?.addEventListener("submit", async (e) => {

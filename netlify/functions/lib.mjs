@@ -56,6 +56,24 @@ export async function maakPostbus({ local, password }) {
   return { ok: false, fout: data?.message || data?.error?.message || data?.code || "De postbus is niet aangemaakt bij Purelymail." };
 }
 
+const VASTE_POSTBUS = new Set(["support", "info", "account", "onboarding", "beheerder", "joshua.bosma"]);
+
+export async function verwijderPostbus(local) {
+  const userName = String(local || "").trim().toLowerCase().replace(/@boaportaal\.nl$/, "");
+  if (!userName) return { ok: true };
+  if (VASTE_POSTBUS.has(userName)) return { ok: true, vast: true };
+  const token = process.env.PURELYMAIL_API_TOKEN;
+  if (!token) return { ok: false, fout: "De medewerkersrol is weg. De postbus niet: PURELYMAIL_API_TOKEN ontbreekt." };
+  const res = await fetch("https://purelymail.com/api/v0/deleteUser", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Purelymail-Api-Token": token },
+    body: JSON.stringify({ userName: `${userName}@boaportaal.nl` }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok || /not found|unknown|no such|does not exist/i.test(JSON.stringify(data))) return { ok: true };
+  return { ok: false, fout: data?.message || data?.error?.message || "De medewerkersrol is weg. De postbus is niet verwijderd." };
+}
+
 export async function verstuurUitnodiging({ naar, naam, postbus, wachtwoordPostbus }) {
   const wachtwoord = process.env.PURELYMAIL_ONBOARDING_PASSWORD;
   if (!wachtwoord) {
