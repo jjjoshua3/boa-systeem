@@ -125,11 +125,14 @@ export default async function handler(request) {
   const gezien = ipVan(request);
 
   if (actie === "kijk") {
+    const gevraagd = schoonIp(body.ip);
+    const ip = gevraagd || gezien;
     const sb = await db();
-    if (!sb || !gezien) return antwoord(request, { blok: false, ip: gezien });
-    const nu = await bestaand(sb, gezien);
-    if (nu.fout || !nu.rij) return antwoord(request, { blok: false, ip: gezien });
-    return antwoord(request, naarBuiten(nu.rij, gezien));
+    if (!sb || !ip) return antwoord(request, { blok: false, ip });
+    const nu = await bestaand(sb, ip);
+    if (nu.fout || !nu.rij) return antwoord(request, { blok: false, ip });
+    if (gevraagd && gevraagd !== gezien) return antwoord(request, { blok: true, ip });
+    return antwoord(request, naarBuiten(nu.rij, ip));
   }
 
   if (actie === "poging") {
