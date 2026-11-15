@@ -1,4 +1,4 @@
-import { beheerder, json, verstuurUitnodiging, verstuurRedactie } from "./lib.mjs";
+import { beheerder, json, maakPostbus, nieuwPostbusWachtwoord, verstuurUitnodiging, verstuurRedactie } from "./lib.mjs";
 
 function naarPv(raw) {
   const t = String(raw || "").trim().replace(/\s+/g, " ");
@@ -275,10 +275,19 @@ export default async (request) => {
   await poort.sb.auth.admin.updateUserById(user.id, {
     user_metadata: { ...(user.user_metadata || {}), naam: pv, rol, mail_local: postbus || user.user_metadata?.mail_local || ident.client_id.toLowerCase(), client_id: ident.client_id },
   });
+  const local = postbus || ident.client_id.toLowerCase();
+  let mailboxPass = String(body.password || "");
+  let vers = "";
+  if (mailboxPass.length < 12) {
+    mailboxPass = nieuwPostbusWachtwoord();
+    vers = mailboxPass;
+  }
+  const post = await maakPostbus({ local, password: mailboxPass });
+  if (!post.ok) return json({ fout: post.fout, client_id: ident.client_id }, 500);
   let mail = false;
   let mailFout = "";
   try {
-    const verzonden = await verstuurUitnodiging({ naar: user.email, naam: pv });
+    const verzonden = await verstuurUitnodiging({ naar: user.email, naam: pv, postbus: post.adres, wachtwoordPostbus: vers });
     mail = Boolean(verzonden.ok);
     mailFout = verzonden.fout || "";
   } catch (err) {
@@ -290,9 +299,9 @@ export default async (request) => {
     doel_client_id: ident.client_id,
     doel_pv_naam: pv,
     ticketnummer: "",
-    reden: mail ? "Uitgenodigd voor de medewerkersportalen. Mail verstuurd." : `Uitgenodigd voor de medewerkersportalen. Mail niet verstuurd: ${mailFout}`.slice(0, 240),
+    reden: `Uitgenodigd. Postbus ${post.adres} ${post.nieuw ? "aangemaakt" : "bestond al"}.${mail ? " Mail verstuurd." : ` Mail niet verstuurd: ${mailFout}`}`.slice(0, 240),
     soort: "MEDEWERKER_AANGEMAAKT",
     niveau: "CRITICAL",
   });
-  return json({ client_id: ident.client_id, pv_naam: pv, rol, mail, mailFout });
+  return json({ client_id: ident.client_id, pv_naam: pv, rol, mail, mailFout, postbus: post.adres, wachtwoord: mail ? "" : vers });
 };

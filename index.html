@@ -737,7 +737,7 @@
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { fout = body.fout || "Uitnodigen lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; teken(); return; }
         fout = "";
-        melding = `Medewerker is aangemaakt. ${body.pv_naam} · ${body.client_id}. ${body.mail ? "De mail is verstuurd." : (body.mailFout || "De uitnodigingsmail is niet verstuurd.")}`;
+        melding = `Medewerker is aangemaakt. Postbus ${body.postbus || ""} staat er. ${body.mail ? "De mail is verstuurd." : (body.mailFout || "De uitnodigingsmail is niet verstuurd.")}${body.wachtwoord ? ` Wachtwoord: ${body.wachtwoord}` : ""}`;
         stafNieuw = false;
         await laadStaf();
       });

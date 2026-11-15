@@ -24,7 +24,39 @@ export function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-export async function verstuurUitnodiging({ naar, naam }) {
+export function nieuwPostbusWachtwoord() {
+  const tekens = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  let uit = "Bp";
+  for (let i = 0; i < 16; i += 1) uit += tekens[Math.floor(Math.random() * tekens.length)];
+  return `${uit}!`;
+}
+
+export async function maakPostbus({ local, password }) {
+  const token = process.env.PURELYMAIL_API_TOKEN;
+  if (!token) return { ok: false, fout: "Zet PURELYMAIL_API_TOKEN op de Netlify-site van systeem. Die staat in Purelymail bij je account, onder API." };
+  const userName = String(local || "").trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(userName)) return { ok: false, fout: "Die postbusnaam kan niet als mailadres." };
+  if (String(password || "").length < 12) return { ok: false, fout: "De postbus heeft een wachtwoord van minstens 12 tekens nodig." };
+  const adres = `${userName}@boaportaal.nl`;
+  const headers = { "Content-Type": "application/json", "Purelymail-Api-Token": token };
+  const aangemaakt = await fetch("https://purelymail.com/api/v0/createUser", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      userName,
+      domainName: "boaportaal.nl",
+      password,
+      enablePasswordReset: false,
+      sendWelcomeEmail: false,
+    }),
+  });
+  const data = await aangemaakt.json().catch(() => ({}));
+  if (aangemaakt.ok) return { ok: true, adres, nieuw: true };
+  if (/exist|already|duplicate/i.test(JSON.stringify(data))) return { ok: true, adres, nieuw: false };
+  return { ok: false, fout: data?.message || data?.error?.message || data?.code || "De postbus is niet aangemaakt bij Purelymail." };
+}
+
+export async function verstuurUitnodiging({ naar, naam, postbus, wachtwoordPostbus }) {
   const wachtwoord = process.env.PURELYMAIL_ONBOARDING_PASSWORD;
   if (!wachtwoord) {
     return { ok: false, fout: "Zet PURELYMAIL_ONBOARDING_PASSWORD op de Netlify-site van systeem. Dan gaat de uitnodiging vanaf onboarding@boaportaal.nl." };
@@ -44,8 +76,9 @@ export async function verstuurUitnodiging({ naar, naam }) {
     "",
     ...links.map(([label, url]) => `${label}: ${url}`),
     "",
-    "Op mail.boaportaal.nl log je in met je Client-ID. Die staat in je gebruikersomgeving: https://boaportaal.nl/account",
-    "Het wachtwoord is het wachtwoord dat je al hebt, of het startwachtwoord dat je van de beheerder hebt gekregen.",
+    postbus ? `Je postbus is ${postbus}.` : "",
+    postbus ? `Op mail.boaportaal.nl log je in met ${postbus.split("@")[0]}.` : "Op mail.boaportaal.nl log je in met je Client-ID. Die staat in je gebruikersomgeving: https://boaportaal.nl/account",
+    wachtwoordPostbus ? `Het wachtwoord van die postbus is: ${wachtwoordPostbus}` : "Het wachtwoord is het wachtwoord dat je al hebt, of het startwachtwoord dat je van de beheerder hebt gekregen.",
     "",
     "Groet,",
     "BOA Portaal",
@@ -57,8 +90,8 @@ export async function verstuurUitnodiging({ naar, naam }) {
     <p>${aanhef}</p>
     <p>Je bent uitgenodigd voor de medewerkersportalen van BOA Portaal.</p>
     <ul style="padding-left:18px">${items}</ul>
-    <p>Op mail.boaportaal.nl log je in met je Client-ID. Die staat in je gebruikersomgeving: <a href="https://boaportaal.nl/account" style="color:#1d4ed8">https://boaportaal.nl/account</a></p>
-    <p>Het wachtwoord is het wachtwoord dat je al hebt, of het startwachtwoord dat je van de beheerder hebt gekregen.</p>
+    ${postbus ? `<p>Je postbus is <b>${postbus}</b>. Op mail.boaportaal.nl log je in met ${postbus.split("@")[0]}.</p>` : `<p>Op mail.boaportaal.nl log je in met je Client-ID. Die staat in je gebruikersomgeving: <a href="https://boaportaal.nl/account" style="color:#1d4ed8">https://boaportaal.nl/account</a></p>`}
+    <p>${wachtwoordPostbus ? `Het wachtwoord van die postbus is: ${wachtwoordPostbus}` : "Het wachtwoord is het wachtwoord dat je al hebt, of het startwachtwoord dat je van de beheerder hebt gekregen."}</p>
     <p>Groet,<br>BOA Portaal</p>
   </div>`;
   const smtp = nodemailer.createTransport({
