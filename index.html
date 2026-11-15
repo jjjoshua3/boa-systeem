@@ -113,8 +113,8 @@
 
     async function vraagFactor(naam) {
       if (naam === "beheer") {
-        const tot = Number(localStorage.getItem("boa-ok-beheer-tot") || 0);
-        if (tot > Date.now()) return "klaar";
+        const open = await sb.rpc("boa_mfa_open");
+        if (!open.error && open.data === true) return "klaar";
       }
       const lijst = await sb.auth.mfa.listFactors();
       if (lijst.error) return { fout: lijst.error.message || "Factoren niet op te vragen." };
@@ -168,7 +168,6 @@
         ${bron ? `<p><img src="${bron.replace(/"/g, "&quot;")}" alt="QR-code voor de beheer-authenticator" width="220" height="220" style="background:#fff;padding:8px"></p>` : ""}
         ${setup && factor.geheim ? `<p>Lukt scannen niet, typ dan deze sleutel: ${esc(factor.geheim)}</p>` : ""}
         <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>
-        ${setup || poort ? "" : `<label>Daarna zonder tweede stap<select name="uren"><option value="8">8 uur</option><option value="24" selected>24 uur</option><option value="48">48 uur</option><option value="72">72 uur</option></select></label>`}
         <button>Bevestigen</button>
         <p class="fout">${esc(fout)}</p>
       </form>`;
@@ -248,7 +247,7 @@
       const totaal = regels.reduce((n, [, a]) => n + Number(a), 0);
       return `<div class="balk">LET OP: Deze inzage op dossier [${esc(d.client_id)} | ${esc(d.pv_naam)}] is op ${esc(d.moment)} geregistreerd in het auditlogboek op naam van [${esc(d.beheerder)}] met reden: '${esc(d.reden)}'.</div>
         <div class="kaart"><h2>${esc(d.pv_naam)} · ${esc(d.client_id)}</h2>
-          <p>Organisatie: ${esc(d.organisatie || "—")} · Status account: ${esc(statusAccount(d))}</p>
+          <p>Organisatie: ${esc(d.organisatie || "—")} · Status account: ${esc(statusAccount(d))} · Zonder tweede stap: ${esc(d.mfa_uren || 8)} uur</p>
           ${d.anon_code ? `<p>Anonieme communitycode ${esc(d.anon_code)} hoort bij dit account. Bericht: ${esc(d.bericht || "—")}${d.geplaatst ? `, geplaatst ${esc(d.geplaatst)}` : ""}.</p>` : ""}
           <h3>Persoonlijke versleutelde kluis (zero-knowledge)</h3>
           <div class="meta">
@@ -261,7 +260,16 @@
             <button id="reset" type="button">Herstel-link sturen</button>
             ${slotKnop(d)}
           </div>
-          ${ik.rol === "beheerder" ? `<form id="factorweg" style="margin-top:14px">
+          ${ik.rol === "beheerder" ? `<form id="mfauren" style="margin-top:14px">
+            <h3>Inloggen zonder tweede stap</h3>
+            <p>Geldt voor deze gebruiker, op het portaal en in systeem. Na een geslaagde code mag die zo lang alleen met het wachtwoord in. Daarna is de code weer verplicht.</p>
+            <label>Duur<select name="uren">
+              ${[8, 24, 48, 72].map((uur) => `<option value="${uur}" ${Number(d.mfa_uren || 8) === uur ? "selected" : ""}>${uur} uur</option>`).join("")}
+            </select></label>
+            <label>Reden<textarea name="reden" required minlength="12" placeholder="Op verzoek, ticket M2611-0412, ander toestel tijdelijk"></textarea></label>
+            <button>Voor deze gebruiker instellen</button>
+          </form>
+          <form id="factorweg" style="margin-top:14px">
             <h3>Authenticator verwijderen</h3>
             <p>Doe dit als iemand een ander toestel heeft en de oude code niet meer kan maken. Daarna stelt die persoon de authenticator opnieuw in bij de volgende login.</p>
             <label>Reden<textarea name="reden" required minlength="12" placeholder="Nieuw toestel, oude authenticator niet meer bereikbaar, ticket M2611-0412"></textarea></label>
@@ -599,6 +607,10 @@
           : { p_sleutel: sleutel, p_reden: f.get("reden") });
         fout = error ? error.message : "";
         dossier = data;
+        if (dossier?.client_id) {
+          const uren = await sb.rpc("boa_mfa_van", { p_client_id: dossier.client_id });
+          if (!uren.error) dossier.mfa_uren = Number(uren.data) || 8;
+        }
         melding = "";
         await laad30();
         await verrijkSlot();
@@ -765,14 +777,25 @@
           teken();
           return;
         }
-        const uren = Number(formulier.get("uren") || 8);
-        localStorage.setItem("boa-ok-beheer-tot", String(Date.now() + uren * 60 * 60 * 1000));
+        await sb.rpc("boa_mfa_stempel");
         factor = null;
         fout = "";
         mfaLet = "";
         const sessie = await sb.auth.getSession();
         noteerInlog(sessie.data.session?.access_token || "", "");
         await vernieuw();
+        teken();
+      });
+      document.getElementById("mfauren")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const { data, error } = await sb.rpc("boa_zet_mfa_uren", {
+          p_client_id: dossier.client_id,
+          p_uren: Number(f.get("uren")),
+          p_reden: f.get("reden"),
+        });
+        if (error) { fout = error.message.includes("function") ? "Draai schema-0018.sql in Supabase." : error.message; melding = ""; }
+        else { fout = ""; melding = `Voor ${dossier.client_id} staat inloggen zonder tweede stap op ${data} uur. De eerstvolgende geslaagde code start die tijd.`; dossier.mfa_uren = data; e.target.reset(); }
         teken();
       });
       document.getElementById("factorweg")?.addEventListener("submit", async (e) => {
