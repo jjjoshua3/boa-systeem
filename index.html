@@ -182,6 +182,35 @@
         <p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
     }
 
+    function statusAccount(d) {
+      if (d.locked) return "PERMANENT VERGRENDELD";
+      if (d.slot_tot && new Date(d.slot_tot).getTime() > Date.now()) return `60 MINUTEN, TOT ${new Date(d.slot_tot).toLocaleString("nl-NL")}`;
+      if (d.slot_straf) return "ACTIEF, VOLGENDE FOUT IS PERMANENT";
+      return "ACTIEF";
+    }
+
+    function slotDicht(d) {
+      return Boolean(d.locked || d.slot_straf || (d.slot_tot && new Date(d.slot_tot).getTime() > Date.now()));
+    }
+
+    function slotKnop(d) {
+      if (slotDicht(d) && (ik.rol === "beheerder" || ik.rol === "support")) return `<button id="lock" type="button" data-dicht="0" class="sec">Account ontgrendelen</button>`;
+      if (!slotDicht(d) && ik.rol === "beheerder") return `<button id="lock" type="button" data-dicht="1" class="sec">Account vergrendelen</button>`;
+      return "";
+    }
+
+    async function verrijkSlot() {
+      if (!dossier?.client_id) return;
+      const res = await fetch("/.netlify/functions/ban", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+        body: JSON.stringify({ actie: "status", client_id: dossier.client_id }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      dossier = { ...dossier, locked: Boolean(body.locked), slot_tot: body.slot_tot || null, slot_straf: Boolean(body.slot_straf), mislukt: body.mislukt || 0 };
+    }
+
     function dossierHtml() {
       const d = dossier;
       const items = d.kluis || {};
@@ -189,7 +218,7 @@
       const totaal = regels.reduce((n, [, a]) => n + Number(a), 0);
       return `<div class="balk">LET OP: Deze inzage op dossier [${esc(d.client_id)} | ${esc(d.pv_naam)}] is op ${esc(d.moment)} geregistreerd in het auditlogboek op naam van [${esc(d.beheerder)}] met reden: '${esc(d.reden)}'.</div>
         <div class="kaart"><h2>${esc(d.pv_naam)} · ${esc(d.client_id)}</h2>
-          <p>Organisatie: ${esc(d.organisatie || "—")} · Status account: ${d.locked ? "LOCKED" : "ACTIEF"}</p>
+          <p>Organisatie: ${esc(d.organisatie || "—")} · Status account: ${esc(statusAccount(d))}</p>
           ${d.anon_code ? `<p>Anonieme communitycode ${esc(d.anon_code)} hoort bij dit account. Bericht: ${esc(d.bericht || "—")}${d.geplaatst ? `, geplaatst ${esc(d.geplaatst)}` : ""}.</p>` : ""}
           <h3>Persoonlijke versleutelde kluis (zero-knowledge)</h3>
           <div class="meta">
@@ -200,7 +229,7 @@
           </div>
           <div class="rij" style="margin-top:12px">
             <button id="reset" type="button">Herstel-link sturen</button>
-            ${ik.rol === "beheerder" ? `<button id="lock" type="button" class="sec">${d.locked ? "Account ontgrendelen" : "Account vergrendelen"}</button>` : ""}
+            ${slotKnop(d)}
           </div>
           ${ik.rol === "beheerder" ? `<form id="wachtwoord" style="margin-top:14px">
             <h3>Wachtwoord direct zetten</h3>
@@ -444,6 +473,7 @@
         dossier = data;
         melding = "";
         await laad30();
+        await verrijkSlot();
         teken();
       });
       document.getElementById("glas-aan")?.addEventListener("change", (e) => { glas = e.target.checked; teken(); });
@@ -467,13 +497,20 @@
         teken();
       });
       document.getElementById("lock")?.addEventListener("click", async () => {
-        const locked = !dossier.locked;
-        const reden = dossier.reden || "Handmatige statuswijziging door hoofdbeheerder";
-        const { data, error } = await sb.rpc("boa_account_locked", { p_client_id: dossier.client_id, p_locked: locked, p_reden: reden });
-        if (error) { fout = error.message; teken(); return; }
-        await fetch("/.netlify/functions/ban", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` }, body: JSON.stringify({ client_id: dossier.client_id, locked }) });
-        dossier = data;
-        melding = locked ? "Account vergrendeld en als kritieke wijziging gelogd." : "Account ontgrendeld en als kritieke wijziging gelogd.";
+        const locked = document.getElementById("lock").dataset.dicht === "1";
+        const reden = dossier.reden || (locked ? "Handmatige vergrendeling door hoofdbeheerder" : "Ontgrendeld na ticket door support of beheer");
+        const res = await fetch("/.netlify/functions/ban", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ client_id: dossier.client_id, locked, reden }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "Vergrendelen lukt niet."; teken(); return; }
+        dossier.locked = locked;
+        dossier.slot_tot = null;
+        dossier.slot_straf = false;
+        melding = locked ? "Account permanent vergrendeld en gelogd." : "Account ontgrendeld. De teller staat weer op nul.";
+        fout = "";
         teken();
       });
       document.getElementById("gebruiker")?.addEventListener("submit", async (e) => {
