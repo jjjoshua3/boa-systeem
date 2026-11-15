@@ -65,6 +65,38 @@ export default async (request) => {
     });
     return json(data);
   }
+  if (body.actie === "factor-weg") {
+    const cid = String(body.client_id || "").trim().toUpperCase();
+    const reden = String(body.reden || "").trim();
+    if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Geen geldige Client-ID." }, 400);
+    if (reden.length < 12) return json({ fout: "De reden is te kort." }, 400);
+    const { data: ident } = await poort.sb.from("boa_identiteit").select("user_id, pv_naam").eq("client_id", cid).maybeSingle();
+    if (!ident?.user_id) return json({ fout: "Geen account met die Client-ID." }, 404);
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const lijst = await fetch(`${url}/auth/v1/admin/users/${ident.user_id}/factors`, {
+      headers: { authorization: `Bearer ${key}`, apikey: key },
+    });
+    const ruw = await lijst.json().catch(() => []);
+    const factors = Array.isArray(ruw) ? ruw : [];
+    for (const factor of factors) {
+      await fetch(`${url}/auth/v1/admin/users/${ident.user_id}/factors/${factor.id}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${key}`, apikey: key },
+      });
+    }
+    await poort.sb.from("boa_audit").insert({
+      beheerder_id: poort.med.client_id,
+      beheerder_naam: "hoofdbeheerder",
+      doel_client_id: cid,
+      doel_pv_naam: ident.pv_naam || "",
+      ticketnummer: "",
+      reden: reden.slice(0, 240),
+      soort: "CRITICAL_AUTH_CHANGE",
+      niveau: "CRITICAL",
+    });
+    return json({ ok: true, aantal: factors.length });
+  }
   if (body.actie === "redactie") {
     const cid = String(body.sleutel || "").trim().toUpperCase();
     if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Vul een Client-ID in." }, 400);

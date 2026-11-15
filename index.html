@@ -112,7 +112,10 @@
     let voorafReden = query.get("van") ? `Behandeling ticket ${query.get("van")}` : "";
 
     async function vraagFactor(naam) {
-      if (sessionStorage.getItem(`boa-ok-${naam}`) === "1") return "klaar";
+      if (naam === "beheer") {
+        const tot = Number(localStorage.getItem("boa-ok-beheer-tot") || 0);
+        if (tot > Date.now()) return "klaar";
+      }
       const lijst = await sb.auth.mfa.listFactors();
       if (lijst.error) return { fout: lijst.error.message || "Factoren niet op te vragen." };
       const past = (f) => naam === "beheer" ? f.friendly_name === "beheer" : !f.friendly_name || f.friendly_name === "portaal" || f.friendly_name === "BOA Portaal";
@@ -165,6 +168,7 @@
         ${bron ? `<p><img src="${bron.replace(/"/g, "&quot;")}" alt="QR-code voor de beheer-authenticator" width="220" height="220" style="background:#fff;padding:8px"></p>` : ""}
         ${setup && factor.geheim ? `<p>Lukt scannen niet, typ dan deze sleutel: ${esc(factor.geheim)}</p>` : ""}
         <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"></label>
+        ${setup || poort ? "" : `<label>Daarna zonder tweede stap<select name="uren"><option value="8">8 uur</option><option value="24" selected>24 uur</option><option value="48">48 uur</option><option value="72">72 uur</option></select></label>`}
         <button>Bevestigen</button>
         <p class="fout">${esc(fout)}</p>
       </form>`;
@@ -257,6 +261,12 @@
             <button id="reset" type="button">Herstel-link sturen</button>
             ${slotKnop(d)}
           </div>
+          ${ik.rol === "beheerder" ? `<form id="factorweg" style="margin-top:14px">
+            <h3>Authenticator verwijderen</h3>
+            <p>Doe dit als iemand een ander toestel heeft en de oude code niet meer kan maken. Daarna stelt die persoon de authenticator opnieuw in bij de volgende login.</p>
+            <label>Reden<textarea name="reden" required minlength="12" placeholder="Nieuw toestel, oude authenticator niet meer bereikbaar, ticket M2611-0412"></textarea></label>
+            <button class="sec" type="submit">Authenticator verwijderen</button>
+          </form>` : ""}
           ${ik.rol === "beheerder" ? `<form id="wachtwoord" style="margin-top:14px">
             <h3>Wachtwoord direct zetten</h3>
             <p>De persoon krijgt geen mail. Jij kiest het wachtwoord en geeft het zelf door. Het wachtwoord komt niet in het auditlog.</p>
@@ -540,7 +550,7 @@
     }
 
     function bind() {
-      document.getElementById("uit")?.addEventListener("click", async () => { sessionStorage.removeItem("boa-ok-beheer"); await sb.auth.signOut(); ik = null; dossier = null; factor = null; teken(); });
+      document.getElementById("uit")?.addEventListener("click", async () => { localStorage.removeItem("boa-ok-beheer-tot"); await sb.auth.signOut(); ik = null; dossier = null; factor = null; teken(); });
       document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; fout = ""; melding = ""; teken(); }));
       document.getElementById("blok-zoek")?.addEventListener("submit", (e) => {
         e.preventDefault();
@@ -739,7 +749,8 @@
       });
       document.getElementById("factor")?.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const code = String(new FormData(e.target).get("code") || "").replace(/\s/g, "");
+        const formulier = new FormData(e.target);
+        const code = String(formulier.get("code") || "").replace(/\s/g, "");
         const poort = factor.modus === "poort";
         const uitdaging = await sb.auth.mfa.challenge({ factorId: factor.factorId });
         if (uitdaging.error || !uitdaging.data) { fout = "De code kon niet worden gevraagd. Probeer het opnieuw."; teken(); return; }
@@ -754,13 +765,27 @@
           teken();
           return;
         }
-        sessionStorage.setItem("boa-ok-beheer", "1");
+        const uren = Number(formulier.get("uren") || 8);
+        localStorage.setItem("boa-ok-beheer-tot", String(Date.now() + uren * 60 * 60 * 1000));
         factor = null;
         fout = "";
         mfaLet = "";
         const sessie = await sb.auth.getSession();
         noteerInlog(sessie.data.session?.access_token || "", "");
         await vernieuw();
+        teken();
+      });
+      document.getElementById("factorweg")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const res = await fetch("/.netlify/functions/medewerker", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ actie: "factor-weg", client_id: dossier.client_id, reden: f.get("reden") }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "De authenticator is niet verwijderd."; melding = ""; }
+        else { fout = ""; melding = body.aantal ? "De authenticator is verwijderd. Bij de volgende login stelt die persoon hem opnieuw in." : "Er stond geen authenticator op dit account."; e.target.reset(); }
         teken();
       });
     }
