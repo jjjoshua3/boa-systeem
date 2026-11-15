@@ -48,6 +48,23 @@ export default async (request) => {
   const poort = await beheerder(request, ["beheerder"]);
   if (poort.fout) return json({ fout: poort.fout }, poort.status);
   const body = await request.json();
+  if (body.actie === "whatsapp") {
+    const cid = String(body.sleutel || "").trim().toUpperCase();
+    if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Vul een Client-ID in." }, 400);
+    const { data, error } = await poort.sb.from("boa_medewerker").update({ whatsapp: Boolean(body.aan) }).eq("client_id", cid).select("client_id, pv_naam, whatsapp").maybeSingle();
+    if (error || !data) return json({ fout: "Geen medewerker met die Client-ID. Eerst uitnodigen voor de medewerkersportalen." }, 404);
+    await poort.sb.from("boa_audit").insert({
+      beheerder_id: poort.med.client_id,
+      beheerder_naam: "hoofdbeheerder",
+      doel_client_id: data.client_id,
+      doel_pv_naam: data.pv_naam,
+      ticketnummer: "",
+      reden: data.whatsapp ? "WhatsApp-toegang aangezet" : "WhatsApp-toegang uitgezet",
+      soort: "WHATSAPP_ROL",
+      niveau: "CRITICAL",
+    });
+    return json(data);
+  }
   const sleutel = String(body.sleutel || body.email || "").trim();
   const rol = body.rol === "beheerder" ? "beheerder" : "support";
   const postbus = String(body.postbus || "").trim().toLowerCase();
@@ -81,9 +98,11 @@ export default async (request) => {
   if (!ident?.client_id) return json({ fout: "Client-ID niet uitgegeven." }, 500);
   pv = ident.pv_naam || pv;
   const { data: bestaand } = await poort.sb.from("boa_medewerker").select("user_id").eq("user_id", user.id).maybeSingle();
-  const rij = { user_id: user.id, client_id: ident.client_id, pv_naam: pv, rol, actief: true };
+  const rij = { user_id: user.id, client_id: ident.client_id, pv_naam: pv, rol, actief: true, whatsapp: Boolean(body.whatsapp) };
+  const wijziging = { pv_naam: pv, rol, actief: true };
+  if (body.whatsapp) wijziging.whatsapp = true;
   const { error: medFout } = bestaand
-    ? await poort.sb.from("boa_medewerker").update({ pv_naam: pv, rol, actief: true }).eq("user_id", user.id)
+    ? await poort.sb.from("boa_medewerker").update(wijziging).eq("user_id", user.id)
     : await poort.sb.from("boa_medewerker").insert(rij);
   if (medFout) return json({ fout: "Medewerkersrol niet gekoppeld." }, 500);
   await poort.sb.auth.admin.updateUserById(user.id, {

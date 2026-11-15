@@ -260,8 +260,16 @@
         <label>PV-naam, alleen bij een adres dat nog geen account heeft<input name="pv_naam" placeholder="DE VRIES, M.A."></label>
         <label>Startwachtwoord, alleen bij een nieuw adres<input type="password" name="password" minlength="12" autocomplete="new-password"></label>
         <label>Rol<select name="rol"><option value="support">Support (1e lijn)</option><option value="beheerder">Beheerder (2e lijn)</option></select></label>
+        <label><input type="checkbox" name="whatsapp"> Ook toegang tot WhatsApp (social.boaportaal.nl)</label>
         <label>Postbusnaam, leeg = Client-ID<input name="postbus" placeholder="joshua.bosma" autocapitalize="none" spellcheck="false"></label>
         <button>Uitnodigen</button>
+      </form>
+      <h2>WhatsApp-rol</h2>
+      <form id="whatsapp" class="kaart">
+        <p>Alleen de hoofdbeheerder. Support of beheerder is niet genoeg. Deze vink geeft toegang tot de WhatsApp-inbox.</p>
+        <label>Client-ID<input name="sleutel" required placeholder="BP-3200-YE" autocapitalize="characters" spellcheck="false"></label>
+        <label><input type="checkbox" name="aan"> Toegang aan</label>
+        <button>Opslaan</button>
       </form>` : "";
       return `${portaal}${staf}<p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
     }
@@ -469,11 +477,24 @@
         const res = await fetch("/.netlify/functions/medewerker", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
-          body: JSON.stringify({ pv_naam: f.get("pv_naam"), sleutel: f.get("sleutel"), password: f.get("password"), rol: f.get("rol"), postbus: f.get("postbus") }),
+          body: JSON.stringify({ pv_naam: f.get("pv_naam"), sleutel: f.get("sleutel"), password: f.get("password"), rol: f.get("rol"), postbus: f.get("postbus"), whatsapp: f.get("whatsapp") === "on" }),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { fout = body.fout || "Uitnodigen lukt niet. Zet SUPABASE_SERVICE_ROLE_KEY in Netlify."; melding = ""; }
         else { fout = ""; melding = body.mail ? `${body.pv_naam} · ${body.client_id} is uitgenodigd. De mail naar de medewerkersportalen is verstuurd.` : `${body.pv_naam} · ${body.client_id} staat erin. ${body.mailFout || "De uitnodigingsmail is niet verstuurd."}`; e.target.reset(); }
+        teken();
+      });
+      document.getElementById("whatsapp")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        const res = await fetch("/.netlify/functions/medewerker", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ actie: "whatsapp", sleutel: f.get("sleutel"), aan: f.get("aan") === "on" }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "Opslaan lukt niet."; melding = ""; }
+        else { fout = ""; melding = body.whatsapp ? `${body.pv_naam} · ${body.client_id} mag in de WhatsApp-inbox.` : `${body.pv_naam} · ${body.client_id} heeft geen WhatsApp-toegang meer.`; }
         teken();
       });
       document.getElementById("filter")?.addEventListener("submit", (e) => {
