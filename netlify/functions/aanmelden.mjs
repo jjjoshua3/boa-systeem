@@ -21,7 +21,9 @@ function antwoord(request, body, status = 200) {
 export default async (request) => {
   if (request.method === "OPTIONS") return antwoord(request, {}, 204);
   if (request.method !== "POST") return antwoord(request, { fout: "POST" }, 405);
-  const body = await request.json().catch(() => ({}));
+  const tekst = await request.text();
+  let body = {};
+  try { body = JSON.parse(tekst); } catch { body = {}; }
   const sleutel = String(body.sleutel || "").trim();
   const password = String(body.password || "");
   const bron = body.bron === "servicedesk" ? "servicedesk" : "systeem";
