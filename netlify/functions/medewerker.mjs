@@ -32,7 +32,15 @@ async function zoekEmail(sb, email) {
 
 async function zorgIdentiteit(sb, user, pv) {
   const { data: bestaand } = await sb.from("boa_identiteit").select("client_id, pv_naam").eq("user_id", user.id).maybeSingle();
-  if (bestaand?.client_id) return bestaand;
+  if (bestaand?.client_id) {
+    const beter = pv && pv.length >= 3 ? pv : "";
+    if (beter && (bestaand.pv_naam === "ONBEKEND, ." || !bestaand.pv_naam)) {
+      await sb.from("boa_identiteit").update({ pv_naam: beter }).eq("user_id", user.id);
+      await sb.from("boa_medewerker").update({ pv_naam: beter }).eq("user_id", user.id);
+      return { client_id: bestaand.client_id, pv_naam: beter };
+    }
+    return bestaand;
+  }
   const naam = pv && pv.length >= 3 ? pv : naarPv(user.user_metadata?.naam || user.email?.split("@")[0] || "ONBEKEND");
   let cid = clientId();
   for (let i = 0; i < 5; i += 1) {
