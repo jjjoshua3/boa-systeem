@@ -121,6 +121,7 @@
         return letters.length ? `${mooi(rechtsT)}, ${letters.join(" ")}.` : mooi(rechtsT);
       }
       const parts = t.split(/\s+/).filter(Boolean);
+      if (parts.length === 1) return parts[0].includes(".") ? parts[0] : mooi(parts[0]);
       const rest = initialen(parts.slice(1).join(" "));
       return rest.length ? `${mooi(parts[0])}, ${rest.join(" ")}.` : mooi(parts[0]);
     };
@@ -481,11 +482,11 @@
         <p class="fout">${esc(fout)}</p>
         <h2>Inlogpogingen</h2>
         <table><thead><tr><th>Moment</th><th>Bron</th><th>Dossier</th><th>Uitkomst</th>${ip ? "<th>IP</th>" : ""}</tr></thead><tbody>
-          ${inlog.length ? inlog.map((r) => `<tr><td>${esc(new Date(r.moment).toLocaleString("nl-NL"))}</td><td>${esc(r.bron)}</td><td>${esc(r.pv_naam)} ${esc(r.client_id)}</td><td>${esc(r.resultaat)}</td>${ip ? `<td>${esc(r.ip || "—")}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${ip ? 5 : 4}">Geen inlogpogingen in deze selectie.</td></tr>`}
+          ${inlog.length ? inlog.map((r) => `<tr><td>${esc(new Date(r.moment).toLocaleString("nl-NL"))}</td><td>${esc(r.bron)}</td><td>${esc(zichtbaar(r.pv_naam))} ${esc(r.client_id)}</td><td>${esc(r.resultaat)}</td>${ip ? `<td>${esc(r.ip || "—")}</td>` : ""}</tr>`).join("") : `<tr><td colspan="${ip ? 5 : 4}">Geen inlogpogingen in deze selectie.</td></tr>`}
         </tbody></table>
         <h2>Register</h2>
         <table><thead><tr><th>Moment</th><th>Bron</th><th>Beheerder</th><th>Dossier</th><th>Ticket</th><th>Soort</th><th>Niveau</th><th>Reden</th></tr></thead><tbody>
-          ${register.length ? register.map((a) => `<tr><td>${esc(new Date(a.moment).toLocaleString("nl-NL"))}</td><td>${esc(bronLabel(a.bron))}</td><td>${esc(a.beheerder_naam)} ${esc(a.beheerder_id)}</td><td>${esc(a.doel_pv_naam)} ${esc(a.doel_client_id)}</td><td>${esc(a.ticketnummer)}</td><td>${esc(soortLabel(a.soort))}</td><td>${esc(a.niveau)}</td><td>${esc(a.reden)}</td></tr>`).join("") : `<tr><td colspan="8">Geen registerregels in deze selectie.</td></tr>`}
+          ${register.length ? register.map((a) => `<tr><td>${esc(new Date(a.moment).toLocaleString("nl-NL"))}</td><td>${esc(bronLabel(a.bron))}</td><td>${esc(zichtbaar(a.beheerder_naam))} ${esc(a.beheerder_id)}</td><td>${esc(zichtbaar(a.doel_pv_naam))} ${esc(a.doel_client_id)}</td><td>${esc(a.ticketnummer)}</td><td>${esc(soortLabel(a.soort))}</td><td>${esc(a.niveau)}</td><td>${esc(a.reden)}</td></tr>`).join("") : `<tr><td colspan="8">Geen registerregels in deze selectie.</td></tr>`}
         </tbody></table>`;
     }
 
