@@ -355,7 +355,6 @@
       const velden = (rij, nieuw) => `<div class="tweevelden">
           <label>PV-naam<input name="pv_naam" value="${esc(rij?.pv_naam || "")}" ${nieuw ? "" : "required"} placeholder="DE VRIES, M.A."></label>
           <label>Rol<select name="rol"><option value="support" ${rij?.rol === "beheerder" ? "" : "selected"}>Support</option><option value="beheerder" ${rij?.rol === "beheerder" ? "selected" : ""}>Beheerder</option></select></label>
-          <label>Zonder tweede stap<select name="mfa_uren">${[8, 24, 48, 72].map((uur) => `<option value="${uur}" ${Number(rij?.mfa_uren || 8) === uur ? "selected" : ""}>${uur} uur</option>`).join("")}</select></label>
           <label>Postbus<input name="postbus" value="${esc(rij?.postbus || "")}" placeholder="zonder @boaportaal.nl" autocapitalize="none" spellcheck="false"></label>
         </div>
         <div class="vinken">
@@ -732,7 +731,6 @@
             password: f.get("password"),
             rol: f.get("rol"),
             postbus: f.get("postbus"),
-            mfa_uren: Number(f.get("mfa_uren") || 8),
             whatsapp: f.get("whatsapp") === "on",
             feit: f.get("feit") === "on",
             boom: f.get("boom") === "on",
@@ -872,7 +870,6 @@
             client_id: stafOpen,
             pv_naam: f.get("pv_naam"),
             rol: f.get("rol"),
-            mfa_uren: Number(f.get("mfa_uren")),
             postbus: f.get("postbus"),
             actief: Boolean(f.get("actief")),
             whatsapp: Boolean(f.get("whatsapp")),
