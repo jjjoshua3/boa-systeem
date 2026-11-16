@@ -89,19 +89,24 @@ export default async (request) => {
     const { data: huidig } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam").eq("client_id", cid).maybeSingle();
     if (!huidig) return json({ fout: "Geen medewerker met die Client-ID." }, 404);
     const rol = body.rol === "beheerder" ? "beheerder" : "support";
-    const { error } = await poort.sb.from("boa_medewerker").update({
+    const kern = await poort.sb.from("boa_medewerker").update({
       pv_naam: pv || huidig.pv_naam,
       rol,
       actief: Boolean(body.actief),
+    }).eq("client_id", cid);
+    if (kern.error) return json({ fout: `Het profiel is niet opgeslagen. ${kern.error.message}` }, 500);
+    const vlaggen = await poort.sb.from("boa_medewerker").update({
       whatsapp: Boolean(body.whatsapp),
       mag_feit: Boolean(body.feit),
       mag_boom: Boolean(body.boom),
       mag_jargon: Boolean(body.jargon),
       mag_trainer: Boolean(body.trainer),
     }).eq("client_id", cid);
-    if (error) return json({ fout: "Het profiel is niet opgeslagen." }, 500);
+    if (vlaggen.error && !/column|schema cache/i.test(vlaggen.error.message)) {
+      return json({ fout: `Het profiel is niet opgeslagen. ${vlaggen.error.message}` }, 500);
+    }
     const ident = await poort.sb.from("boa_identiteit").update({ pv_naam: pv || huidig.pv_naam }).eq("user_id", huidig.user_id);
-    if (ident.error) return json({ fout: "Het profiel is niet opgeslagen." }, 500);
+    if (ident.error) return json({ fout: `De naam is niet bijgewerkt. ${ident.error.message}` }, 500);
     if (postbus) {
       const user = await poort.sb.auth.admin.getUserById(huidig.user_id);
       const meta = user.data?.user?.user_metadata || {};
