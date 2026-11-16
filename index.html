@@ -97,6 +97,24 @@
     const sb = createClient(URL, KEY);
     const app = document.querySelector("#app");
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&" + "amp;", "<": "&" + "lt;", ">": "&" + "gt;", '"': "&" + "quot;", "'": "&" + "#39;"}[c]));
+    const zichtbaar = (ruw) => {
+      const t = String(ruw || "").trim().replace(/\s+/g, " ");
+      if (!t) return "";
+      const tussen = /^(de|van|der|den|ten|ter|het|t)$/i;
+      if (t.includes(",")) {
+        const [links, rechts] = t.split(",", 2);
+        const init = (rechts || "").trim().replace(/\./g, "").slice(0, 1).toUpperCase();
+        const woorden = links.trim().split(" ").filter((woord) => woord && !tussen.test(woord));
+        const letter = (woorden[0] || links.trim()).slice(0, 1).toUpperCase();
+        return init && letter ? `${init}. ${letter}.` : t;
+      }
+      const delen = t.split(" ");
+      const voorRaw = delen[0].replace(/\./g, "");
+      const voor = voorRaw.slice(0, 1).toUpperCase() + voorRaw.slice(1).toLowerCase();
+      const rest = delen.slice(1).filter((woord) => woord && !tussen.test(woord.replace(/\./g, "")));
+      const bron = (rest[0] || "").replace(/\./g, "");
+      return bron ? `${voor} ${bron.slice(0, 1).toUpperCase()}.` : voor;
+    };
     const aanUit = (aan) => aan ? "aan" : "uit";
     const soortLabel = (soort) => ({
       REDACTIE_VOORSTEL: "Redactie voorgelegd",
@@ -372,7 +390,7 @@
           ${velden(null, true)}
           <button>Uitnodigen en mailen</button>
         </form>` : open ? `<form id="staf-profiel" class="kaart">
-          <h2>${esc(open.pv_naam)}</h2>
+          <h2>${esc(zichtbaar(open.pv_naam))}</h2>
           <p class="zacht">${esc(open.client_id)}</p>
           ${velden(open, false)}
           <label>Reden<textarea name="reden" required minlength="12" placeholder="Waarom deze aanpassing"></textarea></label>
@@ -390,7 +408,7 @@
       const lijst = `<div class="kaart">
           <form id="staf-zoek" class="zoekbalk"><input name="q" value="${esc(stafQ)}" placeholder="Zoek naam, Client-ID of postbus"><button class="sec" type="submit">Zoek</button></form>
           <table class="strak"><thead><tr><th>Naam</th><th>Rol</th><th>Postbus</th></tr></thead><tbody>
-            ${staf.length ? staf.map((rij) => `<tr class="rijklik ${rij.client_id === stafOpen ? "aan" : ""}" data-staf="${esc(rij.client_id)}"><td><b>${esc(rij.pv_naam)}</b><br><span class="zacht">${esc(rij.client_id)}${rij.actief ? "" : " · uit"}</span></td><td>${esc(rij.rol)}</td><td>${esc(rij.postbus || "—")}</td></tr>`).join("") : `<tr><td colspan="3">Geen medewerkers in deze selectie.</td></tr>`}
+            ${staf.length ? staf.map((rij) => `<tr class="rijklik ${rij.client_id === stafOpen ? "aan" : ""}" data-staf="${esc(rij.client_id)}"><td><b>${esc(zichtbaar(rij.pv_naam))}</b><br><span class="zacht">${esc(rij.client_id)}${rij.actief ? "" : " · uit"}</span></td><td>${esc(rij.rol)}</td><td>${esc(rij.postbus || "—")}</td></tr>`).join("") : `<tr><td colspan="3">Geen medewerkers in deze selectie.</td></tr>`}
           </tbody></table>
         </div>`;
       const portaal = `<details class="kaart"><summary>Alleen een portaalaccount, geen medewerker</summary>
@@ -470,7 +488,7 @@
         ${ik.rol === "beheerder" ? `<button class="sec ${tab==="blok"?"aan":""}" data-tab="blok">Blokkades</button>` : ""}
         <button class="sec" id="uit">Afmelden ${esc(ik.client_id)}</button>
       </div>
-      <p>${esc(ik.rol)} · ${esc(ik.pv_naam)} · ${esc(ik.client_id)}</p>
+      <p>${esc(ik.rol)} · ${esc(zichtbaar(ik.pv_naam))} · ${esc(ik.client_id)}</p>
       ${mfaLet ? `<p class="ok">${esc(mfaLet)}</p>` : ""}
       ${tab==="zoek" ? zoek() : tab==="mensen" ? medewerkers() : tab==="blok" ? blokHtml() : auditHtml()}`;
     }
