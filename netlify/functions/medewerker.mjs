@@ -2,14 +2,26 @@ import { beheerder, json, maakPostbus, nieuwPostbusWachtwoord, verwijderPostbus,
 
 function naarPv(raw) {
   const t = String(raw || "").trim().replace(/\s+/g, " ");
+  if (!t) return "";
+  const mooi = (woord) => {
+    const s = String(woord || "").replace(/\./g, "");
+    return s ? s.slice(0, 1).toUpperCase() + s.slice(1).toLowerCase() : "";
+  };
   if (t.includes(",")) {
-    const [l, r] = t.split(",", 2);
-    return `${l.trim().toUpperCase()}, ${String(r || ".").trim().toUpperCase()}`;
+    const [links, rechts] = t.split(",", 2);
+    const linksT = links.trim();
+    const letters = String(rechts || "").replace(/[^A-Za-z]/g, "");
+    if (letters && /^[A-Za-z](?:[.\s]*[A-Za-z])*\.?$/.test(String(rechts || "").trim())) {
+      if (linksT === linksT.toUpperCase()) {
+        const delen = linksT.split(/\s+/).filter(Boolean).map((woord) => woord.slice(0, 1).toUpperCase());
+        return `${letters.slice(0, 1).toUpperCase()}., ${delen.join(" ")}.`;
+      }
+      return `${mooi(linksT)}, ${letters.split("").map((letter) => letter.toUpperCase()).join(" ")}.`;
+    }
   }
-  const parts = t.split(" ");
-  const last = parts.pop() || "ONBEKEND";
-  const init = parts.map((w) => `${w[0].toUpperCase()}.`).join("");
-  return `${last.toUpperCase()}, ${init || "."}`;
+  const parts = t.split(/\s+/).filter(Boolean);
+  const rest = parts.slice(1).map((woord) => woord.replace(/[^A-Za-z]/g, "").slice(0, 1).toUpperCase()).filter(Boolean);
+  return rest.length ? `${mooi(parts[0])}, ${rest.join(" ")}.` : mooi(parts[0]);
 }
 
 function clientId() {

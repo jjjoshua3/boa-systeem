@@ -100,20 +100,26 @@
     const zichtbaar = (ruw) => {
       const t = String(ruw || "").trim().replace(/\s+/g, " ");
       if (!t) return "";
-      const tussen = /^(de|van|der|den|ten|ter|het|t)$/i;
+      const mooi = (woord) => {
+        const s = String(woord || "").replace(/\./g, "");
+        return s ? s.slice(0, 1).toUpperCase() + s.slice(1).toLowerCase() : "";
+      };
       if (t.includes(",")) {
         const [links, rechts] = t.split(",", 2);
-        const init = (rechts || "").trim().replace(/\./g, "").slice(0, 1).toUpperCase();
-        const woorden = links.trim().split(" ").filter((woord) => woord && !tussen.test(woord));
-        const letter = (woorden[0] || links.trim()).slice(0, 1).toUpperCase();
-        return init && letter ? `${init}. ${letter}.` : t;
+        const linksT = links.trim();
+        const rechtsT = (rechts || "").trim();
+        const letters = rechtsT.replace(/[^A-Za-z]/g, "");
+        if (letters && /^[A-Za-z](?:[.\s]*[A-Za-z])*\.?$/.test(rechtsT)) {
+          if (linksT === linksT.toUpperCase()) {
+            const delen = linksT.split(/\s+/).filter(Boolean).map((woord) => woord.slice(0, 1).toUpperCase());
+            return `${letters.slice(0, 1).toUpperCase()}., ${delen.join(" ")}.`;
+          }
+          return `${mooi(linksT)}, ${letters.split("").map((letter) => letter.toUpperCase()).join(" ")}.`;
+        }
       }
-      const delen = t.split(" ");
-      const voorRaw = delen[0].replace(/\./g, "");
-      const voor = voorRaw.slice(0, 1).toUpperCase() + voorRaw.slice(1).toLowerCase();
-      const rest = delen.slice(1).filter((woord) => woord && !tussen.test(woord.replace(/\./g, "")));
-      const bron = (rest[0] || "").replace(/\./g, "");
-      return bron ? `${voor} ${bron.slice(0, 1).toUpperCase()}.` : voor;
+      const parts = t.split(/\s+/).filter(Boolean);
+      const rest = parts.slice(1).map((woord) => woord.replace(/[^A-Za-z]/g, "").slice(0, 1).toUpperCase()).filter(Boolean);
+      return rest.length ? `${mooi(parts[0])}, ${rest.join(" ")}.` : mooi(parts[0]);
     };
     const aanUit = (aan) => aan ? "aan" : "uit";
     const soortLabel = (soort) => ({
