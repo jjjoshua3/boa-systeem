@@ -56,6 +56,25 @@ export async function maakPostbus({ local, password }) {
   return { ok: false, fout: data?.message || data?.error?.message || data?.code || "De postbus is niet aangemaakt bij Purelymail." };
 }
 
+export async function zetPostbusWachtwoord({ local, password }) {
+  const token = process.env.PURELYMAIL_API_TOKEN;
+  if (!token) return { ok: false, fout: "Zet PURELYMAIL_API_TOKEN op de Netlify-site van systeem." };
+  const userName = String(local || "").trim().toLowerCase().replace(/@boaportaal\.nl$/, "");
+  if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(userName)) return { ok: false, fout: "Die postbusnaam kan niet als mailadres." };
+  if (String(password || "").length < 12) return { ok: false, fout: "De postbus heeft een wachtwoord van minstens 12 tekens nodig." };
+  const adres = `${userName}@boaportaal.nl`;
+  const headers = { "Content-Type": "application/json", "Purelymail-Api-Token": token };
+  const gewijzigd = await fetch("https://purelymail.com/api/v0/modifyUser", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ userName: adres, newPassword: password, enablePasswordReset: false }),
+  });
+  const data = await gewijzigd.json().catch(() => ({}));
+  if (gewijzigd.ok) return { ok: true, adres };
+  if (/not found|unknown|no such|does not exist/i.test(JSON.stringify(data))) return maakPostbus({ local: userName, password });
+  return { ok: false, fout: data?.message || data?.error?.message || "Het postbuswachtwoord is niet gezet." };
+}
+
 const VASTE_POSTBUS = new Set(["support", "info", "account", "onboarding", "beheerder", "joshua.bosma"]);
 
 export async function verwijderPostbus(local) {
@@ -122,6 +141,51 @@ export async function verstuurUitnodiging({ naar, naam, postbus, wachtwoordPostb
     from: { name: "BOA Portaal", address: "onboarding@boaportaal.nl" },
     to: naar,
     subject: "Uitnodiging voor de medewerkersportalen van BOA Portaal",
+    text: tekst,
+    html,
+  });
+  return { ok: true };
+}
+
+export async function verstuurPostbusWachtwoord({ naar, naam, local, wachtwoordPostbus }) {
+  const wachtwoord = process.env.PURELYMAIL_ONBOARDING_PASSWORD;
+  if (!wachtwoord) return { ok: false, fout: "Zet PURELYMAIL_ONBOARDING_PASSWORD op de Netlify-site van systeem." };
+  const { default: nodemailer } = await import("nodemailer");
+  const aanhef = naam ? `Hoi ${naam},` : "Hoi,";
+  const tekst = [
+    aanhef,
+    "",
+    "Dit is het tijdelijke wachtwoord van je postbus.",
+    "",
+    `Loginnaam: ${local}`,
+    `Wachtwoord: ${wachtwoordPostbus}`,
+    "Adres: https://mail.boaportaal.nl",
+    "",
+    "Bij de eerstvolgende keer inloggen kies je meteen een eigen wachtwoord. Dat wachtwoord geldt alleen voor de mail, niet voor boaportaal.nl.",
+    "",
+    "Groet,",
+    "BOA Portaal",
+  ].join("\n");
+  const html = `<div style="font-family:Segoe UI,Trebuchet MS,sans-serif;font-size:16px;line-height:1.55;color:#0f172a;max-width:560px">
+    <p style="margin:0 0 12px;letter-spacing:.08em;font-size:12px;color:#1d4ed8">BOA PORTAAL</p>
+    <h1 style="font-size:22px;margin:0 0 12px">Je postbuswachtwoord</h1>
+    <p>${aanhef}</p>
+    <p>Dit is het tijdelijke wachtwoord van je postbus.</p>
+    <p>Loginnaam: <b>${local}</b><br>Wachtwoord: <b>${wachtwoordPostbus}</b></p>
+    <p><a href="https://mail.boaportaal.nl" style="color:#1d4ed8">mail.boaportaal.nl</a></p>
+    <p>Bij de eerstvolgende keer inloggen kies je meteen een eigen wachtwoord. Dat wachtwoord geldt alleen voor de mail, niet voor boaportaal.nl.</p>
+    <p>Groet,<br>BOA Portaal</p>
+  </div>`;
+  const smtp = nodemailer.createTransport({
+    host: "smtp.purelymail.com",
+    port: 465,
+    secure: true,
+    auth: { user: "onboarding@boaportaal.nl", pass: wachtwoord },
+  });
+  await smtp.sendMail({
+    from: { name: "BOA Portaal", address: "onboarding@boaportaal.nl" },
+    to: naar,
+    subject: "Je postbuswachtwoord | BOA Portaal",
     text: tekst,
     html,
   });

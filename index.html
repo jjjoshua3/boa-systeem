@@ -382,6 +382,10 @@
           <p class="zacht">Het portaalaccount blijft. De medewerkersrol en de postbus gaan weg.</p>
           <label>Reden<textarea name="reden" required minlength="12" placeholder="Waarom deze medewerker weggaat"></textarea></label>
           <button class="gevaar" type="submit">Medewerker verwijderen</button>
+        </form>
+        <form id="postbus-opnieuw" class="kaart">
+          <p class="zacht">Maakt een tijdelijk postbuswachtwoord en mailt dat naar het zakelijke adres. Bij de eerstvolgende mail-login kiest die persoon een eigen wachtwoord. Dat geldt alleen voor de mail.</p>
+          <button class="sec" type="submit">Mail het postbuswachtwoord</button>
         </form>`}` : `<div class="kaart leeg"><p>Kies een medewerker links, of voeg iemand toe. De uitnodiging gaat per mail weg.</p></div>`;
       const lijst = `<div class="kaart">
           <form id="staf-zoek" class="zoekbalk"><input name="q" value="${esc(stafQ)}" placeholder="Zoek naam, Client-ID of postbus"><button class="sec" type="submit">Zoek</button></form>
@@ -911,6 +915,24 @@
         melding = `Medewerker ${weg} is verwijderd. Het portaalaccount blijft.${body.postbus ? ` ${body.postbus}` : ""}`;
         stafOpen = "";
         await laadStaf();
+      });
+      document.getElementById("postbus-opnieuw")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        if (form.dataset.bezig === "1") return;
+        form.dataset.bezig = "1";
+        const knop = form.querySelector("button");
+        knop.disabled = true;
+        const res = await fetch("/.netlify/functions/medewerker", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
+          body: JSON.stringify({ actie: "postbus-wachtwoord", client_id: stafOpen }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { fout = body.fout || "Het postbuswachtwoord is niet gemaild."; melding = ""; teken(); return; }
+        fout = "";
+        melding = `Het tijdelijke postbuswachtwoord is gemaild. Loginnaam: ${body.local}. Bij de eerstvolgende mail-login kiest die persoon een eigen wachtwoord.`;
+        teken();
       });
       document.getElementById("mfauren")?.addEventListener("submit", async (e) => {
         e.preventDefault();

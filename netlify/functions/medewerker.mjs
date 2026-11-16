@@ -1,4 +1,4 @@
-import { beheerder, json, maakPostbus, nieuwPostbusWachtwoord, verwijderPostbus, verstuurUitnodiging, verstuurRedactie } from "./lib.mjs";
+import { beheerder, json, maakPostbus, nieuwPostbusWachtwoord, verwijderPostbus, verstuurUitnodiging, verstuurPostbusWachtwoord, verstuurRedactie, zetPostbusWachtwoord } from "./lib.mjs";
 
 function naarPv(raw) {
   const t = String(raw || "").trim().replace(/\s+/g, " ");
@@ -149,6 +149,44 @@ export default async (request) => {
     });
     return json({ ok: true, postbus: post.ok ? "" : post.fout });
   }
+  if (body.actie === "postbus-wachtwoord") {
+    const cid = String(body.client_id || "").trim().toUpperCase();
+    if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Geen geldige Client-ID." }, 400);
+    const { data: huidig } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam").eq("client_id", cid).maybeSingle();
+    if (!huidig) return json({ fout: "Geen medewerker met die Client-ID." }, 404);
+    const user = await poort.sb.auth.admin.getUserById(huidig.user_id);
+    const account = user.data?.user;
+    if (!account?.email) return json({ fout: "Dit account heeft geen zakelijk adres. De mail kan niet weg." }, 400);
+    const meta = account.user_metadata || {};
+    const local = String(meta.mail_local || huidig.client_id || "").toLowerCase();
+    const wachtwoord = nieuwPostbusWachtwoord();
+    const post = await zetPostbusWachtwoord({ local, password: wachtwoord });
+    if (!post.ok) return json({ fout: post.fout || "Het postbuswachtwoord is niet gezet." }, 500);
+    await poort.sb.auth.admin.updateUserById(account.id, {
+      user_metadata: { ...meta, mail_local: local, client_id: huidig.client_id, mail_moet_wijzigen: true },
+    });
+    let mail = false;
+    let mailFout = "";
+    try {
+      const verzonden = await verstuurPostbusWachtwoord({ naar: account.email, naam: huidig.pv_naam, local, wachtwoordPostbus: wachtwoord });
+      mail = Boolean(verzonden.ok);
+      mailFout = verzonden.fout || "";
+    } catch (err) {
+      mailFout = err?.message || "De mail is niet verstuurd.";
+    }
+    await poort.sb.from("boa_audit").insert({
+      beheerder_id: poort.med.client_id,
+      beheerder_naam: "hoofdbeheerder",
+      doel_client_id: cid,
+      doel_pv_naam: huidig.pv_naam,
+      ticketnummer: "",
+      reden: `Tijdelijk postbuswachtwoord gemaild naar het zakelijke adres.${mail ? "" : ` Mail niet verstuurd: ${mailFout}`}`.slice(0, 240),
+      soort: "CRITICAL_AUTH_CHANGE",
+      niveau: "CRITICAL",
+    });
+    if (!mail) return json({ fout: mailFout || "Het wachtwoord is gezet, maar de mail is niet verstuurd." }, 500);
+    return json({ ok: true, local });
+  }
   if (body.actie === "whatsapp") {
     const cid = String(body.sleutel || "").trim().toUpperCase();
     if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Vul een Client-ID in." }, 400);
@@ -297,9 +335,6 @@ export default async (request) => {
     mag_jargon: Boolean(body.jargon),
     mag_trainer: Boolean(body.trainer),
   }).eq("user_id", user.id);
-  await poort.sb.auth.admin.updateUserById(user.id, {
-    user_metadata: { ...(user.user_metadata || {}), naam: pv, rol, mail_local: postbus || user.user_metadata?.mail_local || ident.client_id.toLowerCase(), client_id: ident.client_id },
-  });
   const local = postbus || ident.client_id.toLowerCase();
   let mailboxPass = String(body.password || "");
   let vers = "";
@@ -307,6 +342,9 @@ export default async (request) => {
     mailboxPass = nieuwPostbusWachtwoord();
     vers = mailboxPass;
   }
+  await poort.sb.auth.admin.updateUserById(user.id, {
+    user_metadata: { ...(user.user_metadata || {}), naam: pv, rol, mail_local: local, client_id: ident.client_id, mail_moet_wijzigen: Boolean(vers) },
+  });
   const post = await maakPostbus({ local, password: mailboxPass });
   if (!post.ok) return json({ fout: post.fout, client_id: ident.client_id }, 500);
   let mail = false;
