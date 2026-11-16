@@ -102,6 +102,7 @@ export async function verstuurUitnodiging({ naar, naam, postbus, wachtwoordPostb
   const aanhef = naam ? `Hoi ${naam},` : "Hoi,";
   const links = [
     ["Mail", "https://mail.boaportaal.nl"],
+    ["Overleg", "https://overleg.boaportaal.nl"],
     ["Status", "https://status.boaportaal.nl"],
     ["Servicedesk", "https://servicedesk.boaportaal.nl"],
     ["Systeem", "https://systeem.boaportaal.nl"],
