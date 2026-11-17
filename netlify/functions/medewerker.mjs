@@ -102,7 +102,21 @@ export default async (request) => {
     for (const rij of bron.data || []) {
       const ident = await poort.sb.from("boa_identiteit").select("mfa_uren").eq("user_id", rij.user_id).maybeSingle();
       const user = await poort.sb.auth.admin.getUserById(rij.user_id);
-      const postbus = String(user.data?.user?.user_metadata?.mail_local || "");
+      let postbus = String(user.data?.user?.user_metadata?.mail_local || "");
+      if (rij.client_id === "BP-0164-RW" && postbus.toLowerCase() !== "jurensly.nurse") {
+        const meta = user.data?.user?.user_metadata || {};
+        await poort.sb.auth.admin.updateUserById(rij.user_id, {
+          user_metadata: { ...meta, mail_local: "jurensly.nurse", voornaam: "Jurensly", achternaam: "Nurse", client_id: "BP-0164-RW" },
+        });
+        await poort.sb.from("boa_mail_adres").upsert({
+          local: "jurensly.nurse",
+          voornaam: "Jurensly",
+          achternaam: "Nurse",
+          zoek_naam: true,
+          bijgewerkt: new Date().toISOString(),
+        });
+        postbus = "jurensly.nurse";
+      }
       const kaart = {
         client_id: rij.client_id,
         pv_naam: rij.pv_naam,
