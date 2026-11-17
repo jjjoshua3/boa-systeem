@@ -369,8 +369,8 @@
         </form>
         <form id="postbus" style="margin-top:12px">
           <h3>Postbus koppelen</h3>
-          <p>De loginnaam van mail.boaportaal.nl, zonder @boaportaal.nl. Daarmee deelt deze persoon de beheer-authenticator met systeem, behandelaar en mail.</p>
-          <label>Postbusnaam<input name="postbus" required placeholder="bp-3200-ye" autocapitalize="none" spellcheck="false"></label>
+          <p>Het mailadres is voornaam.achternaam@boaportaal.nl. Alleen de naam, zonder @boaportaal.nl.</p>
+          <label>Postbusnaam<input name="postbus" required placeholder="jurensly.nurse" autocapitalize="none" spellcheck="false"></label>
           <label>Reden<textarea name="reden" required minlength="12" placeholder="Postbus gekoppeld zodat de beheer-authenticator ook voor mail geldt"></textarea></label>
           <button>Postbus koppelen</button>
         </form>` : ""}
@@ -380,10 +380,15 @@
     function medewerkers() {
       const open = staf.find((rij) => rij.client_id === stafOpen);
       const vink = (naam, aan, label) => `<label class="vink"><input type="checkbox" name="${naam}" ${aan ? "checked" : ""}> ${label}</label>`;
-      const velden = (rij, nieuw) => `<div class="tweevelden">
+      const velden = (rij, nieuw) => {
+        const delen = String(rij?.postbus || "").includes(".") && !/^bp-\d{4}-[a-z]{2}$/i.test(rij?.postbus || "") ? String(rij.postbus).split(".") : [];
+        const mooi = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+        return `<div class="tweevelden">
           <label>PV-naam<input name="pv_naam" value="${esc(rij?.pv_naam || "")}" ${nieuw ? "" : "required"} placeholder="DE VRIES, M.A."></label>
           <label>Rol<select name="rol"><option value="support" ${rij?.rol === "beheerder" ? "" : "selected"}>Support</option><option value="beheerder" ${rij?.rol === "beheerder" ? "selected" : ""}>Beheerder</option></select></label>
-          <label>Postbus<input name="postbus" value="${esc(rij?.postbus || "")}" placeholder="zonder @boaportaal.nl" autocapitalize="none" spellcheck="false"></label>
+          <label>Voornaam<input name="voornaam" required placeholder="Jurensly" value="${esc(mooi(delen[0] || ""))}"></label>
+          <label>Achternaam<input name="achternaam" required placeholder="Nurse" value="${esc(mooi(delen.slice(1).join("") || ""))}"></label>
+          <p class="zacht">Het mailadres wordt voornaam.achternaam@boaportaal.nl. Inloggen op de mail doe je met die naam, zonder @boaportaal.nl.${rij?.postbus ? ` Huidige postbus: ${esc(rij.postbus)}.` : ""}</p>
         </div>
         <div class="vinken">
           ${nieuw ? "" : vink("actief", rij?.actief !== false, "Actief")}
@@ -393,6 +398,7 @@
           ${vink("jargon", rij?.jargon, "Vakjargon")}
           ${vink("trainer", rij?.trainer, "Trainer")}
         </div>`;
+      };
       const rechts = stafNieuw ? `<form id="medewerker" class="kaart">
           <h2>Nieuwe medewerker</h2>
           <label>Client-ID of adres<input name="sleutel" required placeholder="BP-3200-YE of naam@organisatie.nl" autocapitalize="none" spellcheck="false"></label>
@@ -762,7 +768,8 @@
             sleutel: f.get("sleutel"),
             password: f.get("password"),
             rol: f.get("rol"),
-            postbus: f.get("postbus"),
+            voornaam: f.get("voornaam"),
+            achternaam: f.get("achternaam"),
             whatsapp: f.get("whatsapp") === "on",
             feit: f.get("feit") === "on",
             boom: f.get("boom") === "on",
@@ -902,7 +909,8 @@
             client_id: stafOpen,
             pv_naam: f.get("pv_naam"),
             rol: f.get("rol"),
-            postbus: f.get("postbus"),
+            voornaam: f.get("voornaam"),
+            achternaam: f.get("achternaam"),
             actief: Boolean(f.get("actief")),
             whatsapp: Boolean(f.get("whatsapp")),
             feit: Boolean(f.get("feit")),

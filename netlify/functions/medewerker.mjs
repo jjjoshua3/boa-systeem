@@ -28,6 +28,25 @@ function naarPv(raw) {
   return rest.length ? `${mooi(parts[0])}, ${rest.join(" ")}.` : mooi(parts[0]);
 }
 
+function mailStuk(waarde) {
+  return String(waarde || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function mailLocalVan(voornaam, achternaam) {
+  const voor = mailStuk(voornaam);
+  const achter = mailStuk(achternaam);
+  if (voor.length < 2 || achter.length < 2) return "";
+  return `${voor}.${achter}`.slice(0, 64);
+}
+
+function isClientPostbus(local) {
+  return /^bp-\d{4}-[a-z]{2}$/.test(String(local || ""));
+}
+
 function clientId() {
   const n = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
   const a = String.fromCharCode(65 + Math.floor(Math.random() * 26));
@@ -106,10 +125,10 @@ export default async (request) => {
     const cid = String(body.client_id || "").trim().toUpperCase();
     const reden = String(body.reden || "").trim();
     const pv = String(body.pv_naam || "").trim().replace(/\s+/g, " ").slice(0, 80);
-    const postbus = String(body.postbus || "").trim().toLowerCase().replace(/@boaportaal\.nl$/, "");
+    const postbus = mailLocalVan(body.voornaam, body.achternaam);
     if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Geen geldige Client-ID." }, 400);
     if (reden.length < 12) return json({ fout: "De reden is te kort." }, 400);
-    if (postbus && !/^[a-z0-9._-]{2,40}$/.test(postbus)) return json({ fout: "De postbusnaam klopt niet. Alleen de naam, zonder @boaportaal.nl." }, 400);
+    if (String(body.voornaam || "").trim() && !postbus) return json({ fout: "Voornaam en achternaam zijn allebei nodig. Het mailadres wordt voornaam.achternaam@boaportaal.nl." }, 400);
     const { data: huidig } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam").eq("client_id", cid).maybeSingle();
     if (!huidig) return json({ fout: "Geen medewerker met die Client-ID." }, 404);
     const rol = body.rol === "beheerder" ? "beheerder" : "support";
@@ -134,8 +153,31 @@ export default async (request) => {
     if (postbus) {
       const user = await poort.sb.auth.admin.getUserById(huidig.user_id);
       const meta = user.data?.user?.user_metadata || {};
-      const bijgewerkt = await poort.sb.auth.admin.updateUserById(huidig.user_id, { user_metadata: { ...meta, mail_local: postbus } });
+      const huidigLocal = String(meta.mail_local || "").toLowerCase();
+      const local = !huidigLocal || isClientPostbus(huidigLocal) ? postbus : huidigLocal;
+      const bijgewerkt = await poort.sb.auth.admin.updateUserById(huidig.user_id, {
+        user_metadata: {
+          ...meta,
+          mail_local: local,
+          voornaam: String(body.voornaam || "").trim(),
+          achternaam: String(body.achternaam || "").trim(),
+        },
+      });
       if (bijgewerkt.error) return json({ fout: "De postbus is niet gekoppeld." }, 500);
+      await poort.sb.from("boa_mail_adres").upsert({
+        local,
+        voornaam: String(body.voornaam || "").trim(),
+        achternaam: String(body.achternaam || "").trim(),
+        zoek_naam: true,
+        bijgewerkt: new Date().toISOString(),
+      });
+      if (local !== huidigLocal) {
+        const vers = nieuwPostbusWachtwoord();
+        const post = await maakPostbus({ local, password: vers });
+        if (!post.ok) return json({ fout: post.fout || "De postbus is niet aangemaakt." }, 500);
+        const mail = user.data?.user?.email;
+        if (mail) await verstuurPostbusWachtwoord({ naar: mail, naam: pv || huidig.pv_naam, local, wachtwoordPostbus: vers });
+      }
     }
     await poort.sb.from("boa_audit").insert({
       beheerder_id: poort.med.client_id,
@@ -324,8 +366,6 @@ export default async (request) => {
   }
   const sleutel = String(body.sleutel || body.email || "").trim();
   const rol = body.rol === "beheerder" ? "beheerder" : "support";
-  const postbus = String(body.postbus || "").trim().toLowerCase();
-  if (postbus && !/^[a-z0-9][a-z0-9._-]{0,62}$/.test(postbus)) return json({ fout: "De postbusnaam mag alleen letters, cijfers, een punt of een streepje." }, 400);
 
   let user = null;
   let pv = naarPv(body.pv_naam);
@@ -364,7 +404,12 @@ export default async (request) => {
     mag_jargon: Boolean(body.jargon),
     mag_trainer: Boolean(body.trainer),
   }).eq("user_id", user.id);
-  const local = postbus || ident.client_id.toLowerCase();
+  const voornaam = String(body.voornaam || user.user_metadata?.voornaam || "").trim();
+  const achternaam = String(body.achternaam || user.user_metadata?.achternaam || "").trim();
+  const gewenst = mailLocalVan(voornaam, achternaam);
+  const bestaand = String(user.user_metadata?.mail_local || "").toLowerCase();
+  const local = bestaand && !isClientPostbus(bestaand) ? bestaand : gewenst;
+  if (!local) return json({ fout: "Vul voornaam en achternaam in. Het mailadres wordt voornaam.achternaam@boaportaal.nl." }, 400);
   let mailboxPass = String(body.password || "");
   let vers = "";
   if (mailboxPass.length < 12) {
@@ -372,7 +417,14 @@ export default async (request) => {
     vers = mailboxPass;
   }
   await poort.sb.auth.admin.updateUserById(user.id, {
-    user_metadata: { ...(user.user_metadata || {}), naam: pv, rol, mail_local: local, client_id: ident.client_id, mail_moet_wijzigen: Boolean(vers) },
+    user_metadata: { ...(user.user_metadata || {}), naam: pv, rol, mail_local: local, voornaam, achternaam, client_id: ident.client_id, mail_moet_wijzigen: Boolean(vers) },
+  });
+  await poort.sb.from("boa_mail_adres").upsert({
+    local,
+    voornaam,
+    achternaam,
+    zoek_naam: true,
+    bijgewerkt: new Date().toISOString(),
   });
   const post = await maakPostbus({ local, password: mailboxPass });
   if (!post.ok) return json({ fout: post.fout, client_id: ident.client_id }, 500);

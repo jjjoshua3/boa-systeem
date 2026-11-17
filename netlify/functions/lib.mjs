@@ -115,7 +115,7 @@ export async function verstuurUitnodiging({ naar, naam, postbus, wachtwoordPostb
     ...links.map(([label, url]) => `${label}: ${url}`),
     "",
     postbus ? `Je postbus is ${postbus}.` : "",
-    postbus ? `Op mail.boaportaal.nl log je in met ${postbus.split("@")[0]}.` : "Op mail.boaportaal.nl log je in met je Client-ID. Die staat in je gebruikersomgeving: https://boaportaal.nl/account",
+    postbus ? `Op mail.boaportaal.nl log je in met ${postbus.split("@")[0]}. Zonder @boaportaal.nl.` : "Op mail.boaportaal.nl log je in met je voornaam.achternaam, zonder @boaportaal.nl.",
     wachtwoordPostbus ? `Het wachtwoord van die postbus is: ${wachtwoordPostbus}` : "Het wachtwoord is het wachtwoord dat je al hebt, of het startwachtwoord dat je van de beheerder hebt gekregen.",
     "",
     "Groet,",
@@ -128,7 +128,7 @@ export async function verstuurUitnodiging({ naar, naam, postbus, wachtwoordPostb
     <p>${aanhef}</p>
     <p>Je bent uitgenodigd voor de medewerkersportalen van BOA Portaal.</p>
     <ul style="padding-left:18px">${items}</ul>
-    ${postbus ? `<p>Je postbus is <b>${postbus}</b>. Op mail.boaportaal.nl log je in met ${postbus.split("@")[0]}.</p>` : `<p>Op mail.boaportaal.nl log je in met je Client-ID. Die staat in je gebruikersomgeving: <a href="https://boaportaal.nl/account" style="color:#1d4ed8">https://boaportaal.nl/account</a></p>`}
+    ${postbus ? `<p>Je postbus is <b>${postbus}</b>. Op mail.boaportaal.nl log je in met ${postbus.split("@")[0]}, zonder @boaportaal.nl.</p>` : `<p>Op mail.boaportaal.nl log je in met je voornaam.achternaam, zonder @boaportaal.nl.</p>`}
     <p>${wachtwoordPostbus ? `Het wachtwoord van die postbus is: ${wachtwoordPostbus}` : "Het wachtwoord is het wachtwoord dat je al hebt, of het startwachtwoord dat je van de beheerder hebt gekregen."}</p>
     <p>Groet,<br>BOA Portaal</p>
   </div>`;
