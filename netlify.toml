@@ -12,6 +12,13 @@
   [headers.values]
     Cache-Control = "no-store"
 
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "https://overleg.boaportaal.nl"
+    Access-Control-Allow-Headers = "authorization, content-type"
+    Access-Control-Allow-Methods = "POST, OPTIONS"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
