@@ -269,9 +269,9 @@ function htmlVeilig(waarde) {
 }
 
 export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, einde, uid, link, van, methode }) {
-  const wachtwoord = process.env.PURELYMAIL_ONBOARDING_PASSWORD;
+  const wachtwoord = process.env.PURELYMAIL_AFSPRAAK_PASSWORD;
   if (!wachtwoord) {
-    return { ok: false, fout: "Zet PURELYMAIL_ONBOARDING_PASSWORD op de Netlify-site van systeem." };
+    return { ok: false, fout: "Zet PURELYMAIL_AFSPRAAK_PASSWORD op de Netlify-site van systeem. Dat is het wachtwoord van afspraak@boaportaal.nl." };
   }
   const method = methode === "CANCEL" ? "CANCEL" : "REQUEST";
   const adressen = [...new Set((allen || [naar]).map((mail) => String(mail || "").trim().toLowerCase()).filter(Boolean))];
@@ -291,7 +291,7 @@ export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, 
     `DESCRIPTION:${icsTekst(omschrijving)}`,
     `LOCATION:${icsTekst("Online · BOA Portaal")}`,
     `URL:${link}`,
-    `ORGANIZER;CN=${icsNaam(van || "BOA Portaal")}:mailto:onboarding@boaportaal.nl`,
+    `ORGANIZER;CN=${icsNaam(van || "BOA Portaal")}:mailto:afspraak@boaportaal.nl`,
     ...adressen.map((mail) => `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${icsNaam(mail)}:mailto:${mail}`),
     `STATUS:${method === "CANCEL" ? "CANCELLED" : "CONFIRMED"}`,
     `SEQUENCE:${Math.floor(Date.now() / 1000)}`,
@@ -332,10 +332,10 @@ export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, 
     connectionTimeout: 5000,
     greetingTimeout: 5000,
     socketTimeout: 8000,
-    auth: { user: "onboarding@boaportaal.nl", pass: wachtwoord },
+    auth: { user: "afspraak@boaportaal.nl", pass: wachtwoord },
   });
   await smtp.sendMail({
-    from: { name: "BOA Portaal", address: "onboarding@boaportaal.nl" },
+    from: { name: "BOA Portaal", address: "afspraak@boaportaal.nl" },
     to: naar,
     subject: method === "CANCEL" ? `Afspraak vervalt: ${titel}` : `Uitnodiging: ${titel}`,
     text: tekst,
