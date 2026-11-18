@@ -145,7 +145,7 @@ export default async function handler(request) {
   const body = await request.json().catch(() => ({}));
   if (body.actie === "agenda-check") {
     const wachtwoord = process.env.PURELYMAIL_AFSPRAAK_PASSWORD || "";
-    if (wachtwoord.length < 8) return antwoord(request, { variabele: false, login: false });
+    if (wachtwoord.length < 8) return antwoord(request, { variabele: false, login: false, tekens: wachtwoord.length });
     try {
       const { default: nodemailer } = await import("nodemailer");
       const smtp = nodemailer.createTransport({
