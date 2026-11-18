@@ -93,9 +93,9 @@ async function agendaNieuw(request, body) {
 }
 
 function belLink(afspraak) {
-  const ruw = String(afspraak?.invite_token || afspraak?.id || "").replace(/[^a-z0-9]/gi, "").toLowerCase().slice(0, 40);
-  const room = `boa${ruw}`.slice(0, 48);
-  if (!/^boa[a-z0-9]{10,45}$/.test(room)) return "https://overleg.boaportaal.nl/";
+  const ruw = String(afspraak?.invite_token || afspraak?.id || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+  if (ruw.length < 12) return "https://overleg.boaportaal.nl/";
+  const room = `boaaf${ruw}`.slice(0, 48);
   return `https://overleg.boaportaal.nl/gast.html?room=${room}&direct=1`;
 }
 
