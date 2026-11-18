@@ -31,6 +31,32 @@ export function nieuwPostbusWachtwoord() {
   return `${uit}!`;
 }
 
+function puurOk(data) {
+  const tekst = JSON.stringify(data || {});
+  return !/"type"\s*:\s*"error"/i.test(tekst);
+}
+
+async function verwijderPostbusAdres(adres) {
+  const token = process.env.PURELYMAIL_API_TOKEN;
+  if (!token || !adres) return;
+  await fetch("https://purelymail.com/api/v0/deleteUser", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Purelymail-Api-Token": token },
+    body: JSON.stringify({ userName: adres }),
+  }).catch(() => null);
+}
+
+export async function vervangPostbus({ local, password, domain }) {
+  const domein = domain === "ambassadeur.boaportaal.nl" ? domain : "boaportaal.nl";
+  const userName = String(local || "").trim().toLowerCase().replace(/@.*$/, "");
+  const adres = `${userName}@${domein}`;
+  if (domein === "boaportaal.nl") return zetPostbusWachtwoord({ local: userName, password, domain: domein });
+  await verwijderPostbusAdres(adres);
+  const gemaakt = await maakPostbus({ local: userName, password, domain: domein });
+  if (gemaakt.ok && puurOk(gemaakt)) return gemaakt;
+  return gemaakt.ok ? gemaakt : zetPostbusWachtwoord({ local: userName, password, domain: domein });
+}
+
 export async function maakPostbus({ local, password, domain }) {
   const token = process.env.PURELYMAIL_API_TOKEN;
   if (!token) return { ok: false, fout: "Zet PURELYMAIL_API_TOKEN op de Netlify-site van systeem. Die staat in Purelymail bij je account, onder API." };
@@ -52,7 +78,7 @@ export async function maakPostbus({ local, password, domain }) {
     }),
   });
   const data = await aangemaakt.json().catch(() => ({}));
-  if (aangemaakt.ok) return { ok: true, adres, nieuw: true };
+  if (aangemaakt.ok && puurOk(data)) return { ok: true, adres, nieuw: true };
   if (/exist|already|duplicate/i.test(JSON.stringify(data))) return { ok: true, adres, nieuw: false };
   return { ok: false, fout: data?.message || data?.error?.message || data?.code || "De postbus is niet aangemaakt bij Purelymail." };
 }
@@ -72,7 +98,7 @@ export async function zetPostbusWachtwoord({ local, password, domain }) {
     body: JSON.stringify({ userName: adres, newPassword: password, enablePasswordReset: false }),
   });
   const data = await gewijzigd.json().catch(() => ({}));
-  if (gewijzigd.ok) return { ok: true, adres };
+  if (gewijzigd.ok && puurOk(data)) return { ok: true, adres };
   if (/not found|unknown|no such|does not exist/i.test(JSON.stringify(data))) return maakPostbus({ local: userName, password, domain: domein });
   return { ok: false, fout: data?.message || data?.error?.message || "Het postbuswachtwoord is niet gezet." };
 }

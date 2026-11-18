@@ -1,4 +1,4 @@
-import { json, zetPostbusWachtwoord } from "./lib.mjs";
+import { json, vervangPostbus, zetPostbusWachtwoord } from "./lib.mjs";
 
 export default async (request) => {
   if (request.method !== "POST") return json({ fout: "POST" }, 405);
@@ -9,7 +9,9 @@ export default async (request) => {
   const local = String(body.local || "").trim().toLowerCase();
   const password = String(body.password || "");
   const domain = body.domain === "ambassadeur.boaportaal.nl" ? body.domain : "boaportaal.nl";
-  const uit = await zetPostbusWachtwoord({ local, password, domain });
+  const uit = body.opnieuw
+    ? await vervangPostbus({ local, password, domain })
+    : await zetPostbusWachtwoord({ local, password, domain });
   if (!uit.ok) return json({ fout: uit.fout || "Het mailwachtwoord is niet gewijzigd." }, 500);
   return json({ ok: true });
 };
