@@ -248,3 +248,96 @@ export async function verstuurRedactie({ naar, naam, titel, url, uitleg }) {
   });
   return { ok: true };
 }
+
+function icsTekst(waarde) {
+  return String(waarde || "").replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+}
+
+function icsNaam(waarde) {
+  const s = String(waarde || "Gast").replace(/[\r\n]/g, " ").trim() || "Gast";
+  return /[;,:\\"]/.test(s) ? `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"` : s;
+}
+
+function icsMoment(iso) {
+  const x = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${x.getUTCFullYear()}${pad(x.getUTCMonth() + 1)}${pad(x.getUTCDate())}T${pad(x.getUTCHours())}${pad(x.getUTCMinutes())}${pad(x.getUTCSeconds())}Z`;
+}
+
+function htmlVeilig(waarde) {
+  return String(waarde || "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, einde, uid, link, van, methode }) {
+  const wachtwoord = process.env.PURELYMAIL_ONBOARDING_PASSWORD;
+  if (!wachtwoord) {
+    return { ok: false, fout: "Zet PURELYMAIL_ONBOARDING_PASSWORD op de Netlify-site van systeem." };
+  }
+  const method = methode === "CANCEL" ? "CANCEL" : "REQUEST";
+  const adressen = [...new Set((allen || [naar]).map((mail) => String(mail || "").trim().toLowerCase()).filter(Boolean))];
+  const stamp = icsMoment(new Date().toISOString());
+  const regels = [
+    "BEGIN:VCALENDAR",
+    "PRODID:-//BOA Portaal//Overleg//NL",
+    "VERSION:2.0",
+    "CALSCALE:GREGORIAN",
+    `METHOD:${method}`,
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTAMP:${stamp}`,
+    `DTSTART:${icsMoment(start)}`,
+    `DTEND:${icsMoment(einde)}`,
+    `SUMMARY:${icsTekst(titel)}`,
+    `DESCRIPTION:${icsTekst(omschrijving)}`,
+    `LOCATION:${icsTekst("Online · BOA Portaal")}`,
+    `URL:${link}`,
+    `ORGANIZER;CN=${icsNaam(van || "BOA Portaal")}:mailto:onboarding@boaportaal.nl`,
+    ...adressen.map((mail) => `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${icsNaam(mail)}:mailto:${mail}`),
+    `STATUS:${method === "CANCEL" ? "CANCELLED" : "CONFIRMED"}`,
+    `SEQUENCE:${Math.floor(Date.now() / 1000)}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ];
+  const ics = regels.join("\r\n");
+  const begin = new Intl.DateTimeFormat("nl-NL", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Amsterdam" }).format(new Date(start));
+  const tot = new Intl.DateTimeFormat("nl-NL", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Amsterdam" }).format(new Date(einde));
+  const aanhef = method === "CANCEL" ? "Deze afspraak gaat niet door." : "Je bent uitgenodigd voor een afspraak.";
+  const tekst = [
+    aanhef,
+    "",
+    titel,
+    `${begin} tot ${tot}`,
+    omschrijving || "",
+    "",
+    method === "CANCEL" ? "De afspraak verdwijnt uit je agenda als je deze mail accepteert." : "Accepteer deze uitnodiging. Dan staat de afspraak in je agenda.",
+    van ? `Uitnodiging van ${van}.` : "",
+    "",
+    "BOA Portaal",
+  ].join("\n");
+  const html = `<div style="font-family:Segoe UI,Trebuchet MS,sans-serif;font-size:16px;line-height:1.55;color:#0f172a;max-width:560px">
+    <p style="margin:0 0 12px;letter-spacing:.08em;font-size:12px;color:#1d4ed8">BOA PORTAAL</p>
+    <h1 style="font-size:22px;margin:0 0 12px">${htmlVeilig(method === "CANCEL" ? "Afspraak gaat niet door" : "Agenda-uitnodiging")}</h1>
+    <p>${htmlVeilig(aanhef)}</p>
+    <p><b>${htmlVeilig(titel)}</b><br>${htmlVeilig(begin)} tot ${htmlVeilig(tot)}</p>
+    ${omschrijving ? `<p>${htmlVeilig(omschrijving)}</p>` : ""}
+    <p>${method === "CANCEL" ? "Accepteer deze mail, dan verdwijnt de afspraak uit je agenda." : "Accepteer deze uitnodiging. Dan staat de afspraak in je agenda, ook als je geen medewerker bent."}</p>
+    ${van ? `<p>Uitnodiging van ${htmlVeilig(van)}.</p>` : ""}
+    <p>Groet,<br>BOA Portaal</p>
+  </div>`;
+  const { default: nodemailer } = await import("nodemailer");
+  const smtp = nodemailer.createTransport({
+    host: "smtp.purelymail.com",
+    port: 465,
+    secure: true,
+    auth: { user: "onboarding@boaportaal.nl", pass: wachtwoord },
+  });
+  await smtp.sendMail({
+    from: { name: "BOA Portaal", address: "onboarding@boaportaal.nl" },
+    to: naar,
+    subject: method === "CANCEL" ? `Afspraak vervalt: ${titel}` : `Uitnodiging: ${titel}`,
+    text: tekst,
+    html,
+    icalEvent: { filename: "uitnodiging.ics", method, content: ics },
+  });
+  return { ok: true };
+}

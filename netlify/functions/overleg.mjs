@@ -1,4 +1,4 @@
-import { beheerder } from "./lib.mjs";
+import { admin, beheerder, verstuurAgenda } from "./lib.mjs";
 
 function koppen(request) {
   const bron = request.headers.get("origin") || "";
@@ -16,12 +16,96 @@ function antwoord(request, body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: koppen(request) });
 }
 
+function mailAdressen(ruw) {
+  const gezien = new Set();
+  const uit = [];
+  const bron = Array.isArray(ruw) ? ruw.join(" ") : String(ruw || "");
+  for (const stuk of bron.split(/[\s,;]+/)) {
+    const mail = stuk.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail) || mail.length > 120 || gezien.has(mail)) continue;
+    gezien.add(mail);
+    uit.push(mail);
+    if (uit.length >= 30) break;
+  }
+  return uit;
+}
+
+async function medewerker(request) {
+  const sb = admin();
+  if (!sb) return { fout: "De service-sleutel ontbreekt op de server.", status: 503 };
+  const token = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  if (token.length < 20) return { fout: "Niet aangemeld.", status: 401 };
+  const { data, error } = await sb.auth.getUser(token);
+  if (error || !data.user) return { fout: "Sessie ongeldig.", status: 401 };
+  const { data: med } = await sb.from("boa_medewerker").select("rol, client_id, pv_naam, actief").eq("user_id", data.user.id).maybeSingle();
+  if (!med?.actief) return { fout: "Alleen voor medewerkers.", status: 403 };
+  return { sb, user: data.user, med };
+}
+
+async function mailVanCollegas(sb, clientIds) {
+  const ids = [...new Set((clientIds || []).map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 40);
+  if (!ids.length) return [];
+  const { data } = await sb.from("boa_medewerker").select("user_id").in("client_id", ids);
+  const mails = [];
+  for (const rij of data || []) {
+    if (!rij.user_id) continue;
+    const { data: user } = await sb.auth.admin.getUserById(rij.user_id);
+    const mail = String(user?.user?.email || "").trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) mails.push(mail);
+  }
+  return mails;
+}
+
+async function agendaMail(request, body) {
+  const poort = await medewerker(request);
+  if (poort.fout) return antwoord(request, { fout: poort.fout }, poort.status);
+  const id = String(body.id || "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return antwoord(request, { fout: "De afspraak ontbreekt." }, 400);
+  const { data: afspraak, error } = await poort.sb.from("boa_afspraak").select("*").eq("id", id).maybeSingle();
+  if (error || !afspraak) return antwoord(request, { fout: "De afspraak is niet gevonden." }, 404);
+  if (afspraak.gemaakt_door !== poort.med.client_id && poort.med.rol !== "beheerder") {
+    return antwoord(request, { fout: "Alleen de maker stuurt de uitnodiging." }, 403);
+  }
+  const intern = await mailVanCollegas(poort.sb, [afspraak.gemaakt_door, ...(afspraak.deelnemers || [])]);
+  const naar = [...new Set([...intern, ...mailAdressen(body.gasten), ...mailAdressen(afspraak.gasten)])];
+  if (!naar.length) return antwoord(request, { fout: "Geen mailadres. Kies een collega of vul een extern adres in." }, 400);
+  const weg = body.actie === "agenda-weg";
+  const verzonden = [];
+  let laatsteFout = "";
+  for (const adres of naar) {
+    try {
+      const uit = await verstuurAgenda({
+        naar: adres,
+        allen: naar,
+        titel: afspraak.titel,
+        omschrijving: afspraak.omschrijving || "",
+        start: afspraak.start,
+        einde: afspraak.einde,
+        uid: `${afspraak.id}@overleg.boaportaal.nl`,
+        link: `https://overleg.boaportaal.nl/?afspraak=${afspraak.invite_token || ""}`,
+        van: poort.med.pv_naam || poort.med.client_id,
+        methode: weg ? "CANCEL" : "REQUEST",
+      });
+      if (uit.ok) verzonden.push(adres);
+      else laatsteFout = uit.fout || "";
+    } catch (e) {
+      laatsteFout = e?.message || "De mail is niet verstuurd.";
+    }
+  }
+  if (!weg) await poort.sb.from("boa_afspraak").update({ gasten: naar }).eq("id", id);
+  if (!verzonden.length) {
+    return antwoord(request, { fout: laatsteFout || "De uitnodiging is niet verstuurd." }, 500);
+  }
+  return antwoord(request, { ok: true, naar: verzonden });
+}
+
 export default async function handler(request) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: koppen(request) });
   if (request.method !== "POST") return antwoord(request, { fout: "POST" }, 405);
+  const body = await request.json().catch(() => ({}));
+  if (body.actie === "agenda" || body.actie === "agenda-weg") return agendaMail(request, body);
   const poort = await beheerder(request, ["beheerder", "support"]);
   if (poort.fout) return antwoord(request, { fout: poort.fout }, poort.status);
-  const body = await request.json().catch(() => ({}));
   const { data: recht } = await poort.sb.from("boa_medewerker").select("rol, client_id, pv_naam, actief").eq("user_id", poort.user.id).maybeSingle();
   if (!recht?.actief) return antwoord(request, { fout: "Alleen voor medewerkers." }, 403);
 
