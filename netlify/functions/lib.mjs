@@ -75,7 +75,7 @@ export async function zetPostbusWachtwoord({ local, password }) {
   return { ok: false, fout: data?.message || data?.error?.message || "Het postbuswachtwoord is niet gezet." };
 }
 
-const VASTE_POSTBUS = new Set(["support", "info", "account", "onboarding", "beheerder", "joshua.bosma"]);
+const VASTE_POSTBUS = new Set(["support", "info", "account", "onboarding", "beheerder", "joshua.bosma", "afspraak"]);
 
 export async function verwijderPostbus(local) {
   const userName = String(local || "").trim().toLowerCase().replace(/@boaportaal\.nl$/, "");
@@ -325,22 +325,39 @@ export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, 
     <p>Groet,<br>BOA Portaal</p>
   </div>`;
   const { default: nodemailer } = await import("nodemailer");
-  const smtp = nodemailer.createTransport({
-    host: "smtp.purelymail.com",
-    port: 465,
-    secure: true,
-    connectionTimeout: 5000,
-    greetingTimeout: 5000,
-    socketTimeout: 8000,
-    auth: { user: "afspraak@boaportaal.nl", pass: wachtwoord },
-  });
-  await smtp.sendMail({
+  const bericht = {
     from: { name: "BOA Portaal", address: "afspraak@boaportaal.nl" },
     to: naar,
     subject: method === "CANCEL" ? `Afspraak vervalt: ${titel}` : `Uitnodiging: ${titel}`,
     text: tekst,
     html,
     icalEvent: { filename: "uitnodiging.ics", method, content: ics },
-  });
-  return { ok: true };
+  };
+  const verstuur = async () => {
+    const smtp = nodemailer.createTransport({
+      host: "smtp.purelymail.com",
+      port: 465,
+      secure: true,
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 8000,
+      auth: { user: "afspraak@boaportaal.nl", pass: wachtwoord },
+    });
+    await smtp.sendMail(bericht);
+  };
+  try {
+    await verstuur();
+    return { ok: true };
+  } catch (eerste) {
+    const reden = String(eerste?.message || "");
+    if (!/auth|535|invalid|login|user|account/i.test(reden)) return { ok: false, fout: reden || "De mail is niet verstuurd." };
+    const gezet = await zetPostbusWachtwoord({ local: "afspraak", password: wachtwoord });
+    if (!gezet.ok) return { ok: false, fout: gezet.fout || reden };
+    try {
+      await verstuur();
+      return { ok: true };
+    } catch (tweede) {
+      return { ok: false, fout: tweede?.message || "afspraak@boaportaal.nl neemt de mail niet aan." };
+    }
+  }
 }

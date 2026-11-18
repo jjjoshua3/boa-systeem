@@ -143,6 +143,26 @@ export default async function handler(request) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: koppen(request) });
   if (request.method !== "POST") return antwoord(request, { fout: "POST" }, 405);
   const body = await request.json().catch(() => ({}));
+  if (body.actie === "agenda-check") {
+    const wachtwoord = process.env.PURELYMAIL_AFSPRAAK_PASSWORD || "";
+    if (wachtwoord.length < 8) return antwoord(request, { variabele: false, login: false });
+    try {
+      const { default: nodemailer } = await import("nodemailer");
+      const smtp = nodemailer.createTransport({
+        host: "smtp.purelymail.com",
+        port: 465,
+        secure: true,
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 8000,
+        auth: { user: "afspraak@boaportaal.nl", pass: wachtwoord },
+      });
+      await smtp.verify();
+      return antwoord(request, { variabele: true, login: true });
+    } catch (e) {
+      return antwoord(request, { variabele: true, login: false, fout: String(e?.message || "login mislukt").slice(0, 180) });
+    }
+  }
   if (body.actie === "agenda-lijst") return agendaLijst(request);
   if (body.actie === "agenda-nieuw") return agendaNieuw(request, body);
   if (body.actie === "agenda" || body.actie === "agenda-weg") return agendaMail(request, body);
