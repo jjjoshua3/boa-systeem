@@ -89,16 +89,7 @@ async function agendaNieuw(request, body) {
   };
   const { data, error } = await poort.sb.from("boa_afspraak").insert(rij).select("*").single();
   if (error) return antwoord(request, { fout: error.message || "De afspraak is niet opgeslagen." }, 500);
-  let mail = { naar: [], fout: "" };
-  try {
-    mail = await Promise.race([
-      verstuurAfspraak(poort, data, body.gasten, false),
-      new Promise((resolve) => setTimeout(() => resolve({ naar: [], fout: "De mailserver reageerde niet op tijd. De afspraak staat wel in de agenda." }), 8000)),
-    ]);
-  } catch (e) {
-    mail = { naar: [], fout: e?.message || "De uitnodiging is niet verstuurd. De afspraak staat wel in de agenda." };
-  }
-  return antwoord(request, { ok: true, afspraak: { ...data, gasten: mail.naar }, naar: mail.naar, mailfout: mail.fout });
+  return antwoord(request, { ok: true, afspraak: data });
 }
 
 async function verstuurAfspraak(poort, afspraak, extra, weg) {
