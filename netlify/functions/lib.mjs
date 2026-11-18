@@ -329,6 +329,9 @@ export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, 
     host: "smtp.purelymail.com",
     port: 465,
     secure: true,
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 8000,
     auth: { user: "onboarding@boaportaal.nl", pass: wachtwoord },
   });
   await smtp.sendMail({

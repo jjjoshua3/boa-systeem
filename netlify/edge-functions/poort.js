@@ -1,7 +1,7 @@
 export default async (request, context) => {
   const url = new URL(request.url);
   if (url.hostname === "ip.boaportaal.nl") return context.next();
-  if (url.pathname === "/.netlify/functions/ip") return context.next();
+  if (url.pathname.startsWith("/.netlify/")) return context.next();
   if (/\.(?:js|mjs|css|map|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|txt|xml|webmanifest|json)$/i.test(url.pathname)) {
     return context.next();
   }

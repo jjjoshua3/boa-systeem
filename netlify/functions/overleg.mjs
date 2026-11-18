@@ -89,7 +89,15 @@ async function agendaNieuw(request, body) {
   };
   const { data, error } = await poort.sb.from("boa_afspraak").insert(rij).select("*").single();
   if (error) return antwoord(request, { fout: error.message || "De afspraak is niet opgeslagen." }, 500);
-  const mail = await verstuurAfspraak(poort, data, body.gasten, false);
+  let mail = { naar: [], fout: "" };
+  try {
+    mail = await Promise.race([
+      verstuurAfspraak(poort, data, body.gasten, false),
+      new Promise((resolve) => setTimeout(() => resolve({ naar: [], fout: "De mailserver reageerde niet op tijd. De afspraak staat wel in de agenda." }), 8000)),
+    ]);
+  } catch (e) {
+    mail = { naar: [], fout: e?.message || "De uitnodiging is niet verstuurd. De afspraak staat wel in de agenda." };
+  }
   return antwoord(request, { ok: true, afspraak: { ...data, gasten: mail.naar }, naar: mail.naar, mailfout: mail.fout });
 }
 
@@ -140,6 +148,7 @@ async function agendaMail(request, body) {
 }
 
 export default async function handler(request) {
+  try {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: koppen(request) });
   if (request.method !== "POST") return antwoord(request, { fout: "POST" }, 405);
   const body = await request.json().catch(() => ({}));
@@ -213,4 +222,7 @@ export default async function handler(request) {
   }
 
   return antwoord(request, { fout: "Onbekende actie." }, 400);
+  } catch (e) {
+    return antwoord(request, { fout: e?.message || "De server stopte tijdens het inplannen." }, 500);
+  }
 }
