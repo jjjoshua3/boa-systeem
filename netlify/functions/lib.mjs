@@ -309,7 +309,7 @@ export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, 
     `${begin} tot ${tot}`,
     omschrijving || "",
     "",
-    method === "CANCEL" ? "De afspraak verdwijnt uit je agenda als je deze mail accepteert." : "Accepteer deze uitnodiging. Dan staat de afspraak in je agenda.",
+    method === "CANCEL" ? "De afspraak verdwijnt uit je agenda als je deze mail accepteert." : "Wilt u deze afspraak direct in uw agenda? Accepteer hem dan nu.",
     van ? `Uitnodiging van ${van}.` : "",
     "",
     "BOA Portaal",
@@ -320,7 +320,7 @@ export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, 
     <p>${htmlVeilig(aanhef)}</p>
     <p><b>${htmlVeilig(titel)}</b><br>${htmlVeilig(begin)} tot ${htmlVeilig(tot)}</p>
     ${omschrijving ? `<p>${htmlVeilig(omschrijving)}</p>` : ""}
-    <p>${method === "CANCEL" ? "Accepteer deze mail, dan verdwijnt de afspraak uit je agenda." : "Accepteer deze uitnodiging. Dan staat de afspraak in je agenda, ook als je geen medewerker bent."}</p>
+    <p>${method === "CANCEL" ? "Accepteer deze mail, dan verdwijnt de afspraak uit je agenda." : "Wilt u deze afspraak direct in uw agenda? Accepteer hem dan nu."}</p>
     ${van ? `<p>Uitnodiging van ${htmlVeilig(van)}.</p>` : ""}
     <p>Groet,<br>BOA Portaal</p>
   </div>`;
