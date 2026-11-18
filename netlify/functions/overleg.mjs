@@ -61,7 +61,9 @@ async function agendaLijst(request) {
   if (poort.fout) return antwoord(request, { fout: poort.fout }, poort.status);
   const { data, error } = await poort.sb.from("boa_afspraak").select("*").neq("status", "geannuleerd").order("start");
   if (error) return antwoord(request, { fout: error.message || "De agenda is niet geladen." }, 500);
-  return antwoord(request, { afspraken: data || [] });
+  const ikId = poort.med.client_id;
+  const afspraken = (data || []).filter((rij) => rij.kanaal_id !== "prive" || rij.gemaakt_door === ikId);
+  return antwoord(request, { afspraken });
 }
 
 async function agendaNieuw(request, body) {
@@ -81,7 +83,7 @@ async function agendaNieuw(request, body) {
     einde: einde.toISOString(),
     gemaakt_door: poort.med.client_id,
     deelnemers,
-    kanaal_id: String(body.kanaal || "").slice(0, 40),
+    kanaal_id: body.prive === true || body.prive === "prive" ? "prive" : "team",
     invite_token: crypto.randomBytes(12).toString("hex"),
     status: "gepland",
   };
