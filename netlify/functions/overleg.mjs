@@ -94,7 +94,7 @@ async function agendaNieuw(request, body) {
 
 async function verstuurAfspraak(poort, afspraak, extra, weg) {
   const intern = await mailVanCollegas(poort.sb, [afspraak.gemaakt_door, ...(afspraak.deelnemers || [])]);
-  const naar = [...new Set([...intern, ...mailAdressen(extra), ...mailAdressen(afspraak.gasten)])];
+  const naar = [...new Set([...intern, ...mailAdressen(extra), ...mailAdressen(afspraak.gasten), ...mailAdressen(afspraak.eigen)])];
   if (weg) await poort.sb.from("boa_afspraak").update({ status: "geannuleerd" }).eq("id", afspraak.id);
   if (!naar.length) return { naar: [], fout: weg ? "" : "Geen mailadres. Kies een collega of vul een extern adres in." };
   const verzonden = [];
@@ -132,7 +132,7 @@ async function agendaMail(request, body) {
   if (afspraak.gemaakt_door !== poort.med.client_id && poort.med.rol !== "beheerder") {
     return antwoord(request, { fout: "Alleen de maker stuurt de uitnodiging." }, 403);
   }
-  const mail = await verstuurAfspraak(poort, afspraak, body.gasten, body.actie === "agenda-weg");
+  const mail = await verstuurAfspraak(poort, { ...afspraak, eigen: body.eigen }, body.gasten, body.actie === "agenda-weg");
   if (body.actie === "agenda-weg") return antwoord(request, { ok: true, naar: mail.naar });
   if (!mail.naar.length) return antwoord(request, { fout: mail.fout }, 500);
   return antwoord(request, { ok: true, naar: mail.naar });
