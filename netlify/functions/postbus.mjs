@@ -8,7 +8,8 @@ export default async (request) => {
   const body = await request.json().catch(() => ({}));
   const local = String(body.local || "").trim().toLowerCase();
   const password = String(body.password || "");
-  const uit = await zetPostbusWachtwoord({ local, password });
+  const domain = body.domain === "ambassadeur.boaportaal.nl" ? body.domain : "boaportaal.nl";
+  const uit = await zetPostbusWachtwoord({ local, password, domain });
   if (!uit.ok) return json({ fout: uit.fout || "Het mailwachtwoord is niet gewijzigd." }, 500);
   return json({ ok: true });
 };

@@ -31,20 +31,21 @@ export function nieuwPostbusWachtwoord() {
   return `${uit}!`;
 }
 
-export async function maakPostbus({ local, password }) {
+export async function maakPostbus({ local, password, domain }) {
   const token = process.env.PURELYMAIL_API_TOKEN;
   if (!token) return { ok: false, fout: "Zet PURELYMAIL_API_TOKEN op de Netlify-site van systeem. Die staat in Purelymail bij je account, onder API." };
-  const userName = String(local || "").trim().toLowerCase();
+  const userName = String(local || "").trim().toLowerCase().replace(/@.*$/, "");
+  const domein = domain === "ambassadeur.boaportaal.nl" ? domain : "boaportaal.nl";
   if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(userName)) return { ok: false, fout: "Die postbusnaam kan niet als mailadres." };
   if (String(password || "").length < 12) return { ok: false, fout: "De postbus heeft een wachtwoord van minstens 12 tekens nodig." };
-  const adres = `${userName}@boaportaal.nl`;
+  const adres = `${userName}@${domein}`;
   const headers = { "Content-Type": "application/json", "Purelymail-Api-Token": token };
   const aangemaakt = await fetch("https://purelymail.com/api/v0/createUser", {
     method: "POST",
     headers,
     body: JSON.stringify({
       userName,
-      domainName: "boaportaal.nl",
+      domainName: domein,
       password,
       enablePasswordReset: false,
       sendWelcomeEmail: false,
@@ -56,13 +57,14 @@ export async function maakPostbus({ local, password }) {
   return { ok: false, fout: data?.message || data?.error?.message || data?.code || "De postbus is niet aangemaakt bij Purelymail." };
 }
 
-export async function zetPostbusWachtwoord({ local, password }) {
+export async function zetPostbusWachtwoord({ local, password, domain }) {
   const token = process.env.PURELYMAIL_API_TOKEN;
   if (!token) return { ok: false, fout: "Zet PURELYMAIL_API_TOKEN op de Netlify-site van systeem." };
-  const userName = String(local || "").trim().toLowerCase().replace(/@boaportaal\.nl$/, "");
+  const domein = domain === "ambassadeur.boaportaal.nl" ? domain : "boaportaal.nl";
+  const userName = String(local || "").trim().toLowerCase().replace(/@.*$/, "");
   if (!/^[a-z0-9][a-z0-9._-]{0,62}$/.test(userName)) return { ok: false, fout: "Die postbusnaam kan niet als mailadres." };
   if (String(password || "").length < 12) return { ok: false, fout: "De postbus heeft een wachtwoord van minstens 12 tekens nodig." };
-  const adres = `${userName}@boaportaal.nl`;
+  const adres = `${userName}@${domein}`;
   const headers = { "Content-Type": "application/json", "Purelymail-Api-Token": token };
   const gewijzigd = await fetch("https://purelymail.com/api/v0/modifyUser", {
     method: "POST",
@@ -71,7 +73,7 @@ export async function zetPostbusWachtwoord({ local, password }) {
   });
   const data = await gewijzigd.json().catch(() => ({}));
   if (gewijzigd.ok) return { ok: true, adres };
-  if (/not found|unknown|no such|does not exist/i.test(JSON.stringify(data))) return maakPostbus({ local: userName, password });
+  if (/not found|unknown|no such|does not exist/i.test(JSON.stringify(data))) return maakPostbus({ local: userName, password, domain: domein });
   return { ok: false, fout: data?.message || data?.error?.message || "Het postbuswachtwoord is niet gezet." };
 }
 
