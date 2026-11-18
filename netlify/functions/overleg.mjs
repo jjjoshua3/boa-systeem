@@ -92,6 +92,13 @@ async function agendaNieuw(request, body) {
   return antwoord(request, { ok: true, afspraak: data });
 }
 
+function belLink(afspraak) {
+  const ruw = String(afspraak?.invite_token || afspraak?.id || "").replace(/[^a-z0-9]/gi, "").toLowerCase().slice(0, 40);
+  const room = `boa${ruw}`.slice(0, 48);
+  if (!/^boa[a-z0-9]{10,45}$/.test(room)) return "https://overleg.boaportaal.nl/";
+  return `https://overleg.boaportaal.nl/gast.html?room=${room}&direct=1`;
+}
+
 async function verstuurAfspraak(poort, afspraak, extra, weg) {
   const intern = await mailVanCollegas(poort.sb, [afspraak.gemaakt_door, ...(afspraak.deelnemers || [])]);
   const naar = [...new Set([...intern, ...mailAdressen(extra), ...mailAdressen(afspraak.gasten), ...mailAdressen(afspraak.eigen)])];
@@ -109,7 +116,7 @@ async function verstuurAfspraak(poort, afspraak, extra, weg) {
         start: afspraak.start,
         einde: afspraak.einde,
         uid: `${afspraak.id}@overleg.boaportaal.nl`,
-        link: `https://overleg.boaportaal.nl/?afspraak=${afspraak.invite_token || ""}`,
+        link: belLink(afspraak),
         van: poort.med.pv_naam || poort.med.client_id,
         methode: weg ? "CANCEL" : "REQUEST",
       });

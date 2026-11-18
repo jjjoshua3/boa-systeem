@@ -288,8 +288,8 @@ export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, 
     `DTSTART:${icsMoment(start)}`,
     `DTEND:${icsMoment(einde)}`,
     `SUMMARY:${icsTekst(titel)}`,
-    `DESCRIPTION:${icsTekst(omschrijving)}`,
-    `LOCATION:${icsTekst("Online · BOA Portaal")}`,
+    `DESCRIPTION:${icsTekst([omschrijving, link ? `Nu deelnemen aan de call: ${link}` : ""].filter(Boolean).join("\n"))}`,
+    `LOCATION:${icsTekst(link || "Online · BOA Portaal")}`,
     `URL:${link}`,
     `ORGANIZER;CN=${icsNaam(van || "BOA Portaal")}:mailto:afspraak@boaportaal.nl`,
     ...adressen.map((mail) => `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${icsNaam(mail)}:mailto:${mail}`),
@@ -310,6 +310,7 @@ export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, 
     omschrijving || "",
     "",
     method === "CANCEL" ? "De afspraak verdwijnt uit je agenda als je deze mail accepteert." : "Wilt u deze afspraak direct in uw agenda? Accepteer hem dan nu.",
+    link ? `Nu deelnemen aan de call: ${link}` : "",
     van ? `Uitnodiging van ${van}.` : "",
     "",
     "BOA Portaal",
@@ -321,6 +322,7 @@ export async function verstuurAgenda({ naar, allen, titel, omschrijving, start, 
     <p><b>${htmlVeilig(titel)}</b><br>${htmlVeilig(begin)} tot ${htmlVeilig(tot)}</p>
     ${omschrijving ? `<p>${htmlVeilig(omschrijving)}</p>` : ""}
     <p>${method === "CANCEL" ? "Accepteer deze mail, dan verdwijnt de afspraak uit je agenda." : "Wilt u deze afspraak direct in uw agenda? Accepteer hem dan nu."}</p>
+    ${link && method !== "CANCEL" ? `<p><a href="${htmlVeilig(link)}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 16px;font-weight:700">Nu deelnemen aan de call</a></p><p>Of open deze link:<br><a href="${htmlVeilig(link)}">${htmlVeilig(link)}</a></p>` : ""}
     ${van ? `<p>Uitnodiging van ${htmlVeilig(van)}.</p>` : ""}
     <p>Groet,<br>BOA Portaal</p>
   </div>`;
