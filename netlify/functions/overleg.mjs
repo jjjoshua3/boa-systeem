@@ -42,6 +42,26 @@ async function medewerker(request) {
   return { sb, user: data.user, med };
 }
 
+function mailStuk(waarde) {
+  return String(waarde || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function postbusVan(user) {
+  const meta = user?.user_metadata || {};
+  const bestaand = String(meta.mail_local || "").trim().toLowerCase();
+  if (bestaand && !/^bp-\d{4}-[a-z]{2}$/.test(bestaand) && /^[a-z0-9][a-z0-9.-]{0,62}$/.test(bestaand)) {
+    return bestaand.includes("@") ? bestaand : `${bestaand}@boaportaal.nl`;
+  }
+  const voor = mailStuk(meta.voornaam);
+  const achter = mailStuk(meta.achternaam);
+  if (voor.length < 2 || achter.length < 2) return "";
+  return `${voor}.${achter}`.slice(0, 64) + "@boaportaal.nl";
+}
+
 async function mailVanCollegas(sb, clientIds) {
   const ids = [...new Set((clientIds || []).map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 40);
   if (!ids.length) return [];
@@ -50,8 +70,8 @@ async function mailVanCollegas(sb, clientIds) {
   for (const rij of data || []) {
     if (!rij.user_id) continue;
     const { data: user } = await sb.auth.admin.getUserById(rij.user_id);
-    const mail = String(user?.user?.email || "").trim().toLowerCase();
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) mails.push(mail);
+    const mail = postbusVan(user?.user);
+    if (mail && !mails.includes(mail)) mails.push(mail);
   }
   return mails;
 }
@@ -101,7 +121,8 @@ function belLink(afspraak) {
 
 async function verstuurAfspraak(poort, afspraak, extra, weg) {
   const intern = await mailVanCollegas(poort.sb, [afspraak.gemaakt_door, ...(afspraak.deelnemers || [])]);
-  const naar = [...new Set([...intern, ...mailAdressen(extra), ...mailAdressen(afspraak.gasten), ...mailAdressen(afspraak.eigen)])];
+  const prive = String(poort.user?.email || "").trim().toLowerCase();
+  const naar = [...new Set([...intern, ...mailAdressen(extra), ...mailAdressen(afspraak.gasten)])].filter((mail) => mail.endsWith("@boaportaal.nl") || mail !== prive);
   if (weg) await poort.sb.from("boa_afspraak").update({ status: "geannuleerd" }).eq("id", afspraak.id);
   if (!naar.length) return { naar: [], fout: weg ? "" : "Geen mailadres. Kies een collega of vul een extern adres in." };
   const verzonden = [];
