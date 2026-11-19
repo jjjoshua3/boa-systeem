@@ -5,6 +5,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Systeembeheer & audit | BOA Portaal</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="/favicon-180.png">
+
   <style>
     :root { --navy:#0b1220; --actie:#1d4ed8; --veld:#0f172a; --kaart:#111827; --lijn:#334155; --tekst:#e5e7eb; --muted:#94a3b8; --warn:#fbbf24; --crit:#fca5a5; }
     * { box-sizing: border-box; }
@@ -265,7 +269,7 @@
           <button id="zoek-knop">Zoeken</button>
         </form>
         ${ik.medewerker ? `<form id="glas" class="kaart"><label><input id="glas-aan" type="checkbox" ${glas ? "checked" : ""}> Zoeken op e-mailadres</label>
-          ${glas ? `<p>HIGH ALERT. Deze opvraag schrijft een zware regel in het auditregister. Het adres komt niet terug in het dossier.</p><label>Zakelijk adres<input type="email" name="email" required></label><label>Reden<textarea name="reden" required minlength="12"></textarea></label><button>Nood-opvraag uitvoeren</button>` : ""}</form>` : ""}
+          ${glas ? `<p>HIGH ALERT. Deze opvraag schrijft een zware regel in het auditregister.</p><label>Zakelijk adres<input type="email" name="email" required></label><label>Reden<textarea name="reden" required minlength="12"></textarea></label><button>Nood-opvraag uitvoeren</button>` : ""}</form>` : ""}
         ${dossier ? dossierHtml() : ""}
         <p class="fout">${esc(fout)}</p><p class="ok">${esc(melding)}</p>`;
     }
