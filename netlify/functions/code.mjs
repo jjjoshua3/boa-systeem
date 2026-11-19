@@ -33,6 +33,9 @@ function wachtwoordFout(password, extra = []) {
   const tekst = String(password || "");
   if (tekst.length < 12) return "Kies een wachtwoord van minstens 12 tekens. De mailserver eist dat ook.";
   if (tekst.length > 200) return "Het wachtwoord is te lang.";
+  if (!/[A-Z]/.test(tekst)) return "Het wachtwoord mist een hoofdletter.";
+  if (!/[0-9]/.test(tekst)) return "Het wachtwoord mist een cijfer.";
+  if (!/[^A-Za-z0-9]/.test(tekst)) return "Het wachtwoord mist een speciaal teken.";
   const score = zxcvbn(tekst, extra.map((deel) => String(deel || "")).filter((deel) => deel.length > 1));
   const dagen = Math.floor(Number(score?.crack_times_seconds?.offline_fast_hashing_1e10_per_second || 0) / 86400);
   if (dagen < 30) return `Dit wachtwoord is te makkelijk. De mailserver eist minstens 30 dagen kraaktijd. Dit wachtwoord zit op ${dagen} dagen. Gebruik een zin van vier willekeurige woorden.`;
