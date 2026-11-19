@@ -401,6 +401,7 @@
           ${vink("boom", rij?.boom, "Beslisbomen")}
           ${vink("jargon", rij?.jargon, "Vakjargon")}
           ${vink("trainer", rij?.trainer, "Trainer")}
+          ${vink("domein2", rij?.domein2, "Domein II")}
         </div>`;
       };
       const rechts = stafNieuw ? `<form id="medewerker" class="kaart">
@@ -779,6 +780,7 @@
             boom: f.get("boom") === "on",
             jargon: f.get("jargon") === "on",
             trainer: f.get("trainer") === "on",
+            domein2: f.get("domein2") === "on",
           }),
         });
         const body = await res.json().catch(() => ({}));
@@ -807,12 +809,12 @@
         const res = await fetch("/.netlify/functions/medewerker", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${await token()}` },
-          body: JSON.stringify({ actie: "redactie", sleutel: f.get("sleutel"), feit: f.get("feit") === "on", boom: f.get("boom") === "on", jargon: f.get("jargon") === "on", trainer: f.get("trainer") === "on" }),
+          body: JSON.stringify({ actie: "redactie", sleutel: f.get("sleutel"), feit: f.get("feit") === "on", boom: f.get("boom") === "on", jargon: f.get("jargon") === "on", trainer: f.get("trainer") === "on", domein2: f.get("domein2") === "on" }),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { fout = body.fout || "Opslaan mislukt."; melding = ""; teken(); return; }
         fout = "";
-        melding = `${body.pv_naam} · ${body.client_id}: feitcodes ${aanUit(body.mag_feit)}, beslisbomen ${aanUit(body.mag_boom)}, vakjargon ${aanUit(body.mag_jargon)}, trainer ${aanUit(body.mag_trainer)}.${body.mails?.length ? ` Uitnodiging verstuurd voor ${body.mails.join(", ")}.` : ""}${body.mailFout ? ` ${body.mailFout}` : ""}`;
+        melding = `${body.pv_naam} · ${body.client_id}: feitcodes ${aanUit(body.mag_feit)}, beslisbomen ${aanUit(body.mag_boom)}, vakjargon ${aanUit(body.mag_jargon)}, trainer ${aanUit(body.mag_trainer)}, domein II ${aanUit(body.mag_domein2)}.${body.mails?.length ? ` Uitnodiging verstuurd voor ${body.mails.join(", ")}.` : ""}${body.mailFout ? ` ${body.mailFout}` : ""}`;
         teken();
       });
       document.getElementById("filter")?.addEventListener("submit", (e) => {
@@ -921,13 +923,14 @@
             boom: Boolean(f.get("boom")),
             jargon: Boolean(f.get("jargon")),
             trainer: Boolean(f.get("trainer")),
+            domein2: Boolean(f.get("domein2")),
             reden: f.get("reden"),
           }),
         });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) { fout = body.fout || "Het profiel is niet opgeslagen."; melding = ""; teken(); return; }
         fout = "";
-        melding = "Het medewerkersprofiel is opgeslagen en gelogd.";
+        melding = `Het medewerkersprofiel is opgeslagen en gelogd.${body.domeinMail || ""}`;
         await laadStaf();
       });
       document.getElementById("staf-weg")?.addEventListener("submit", async (e) => {

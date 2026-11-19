@@ -86,6 +86,21 @@ async function zorgIdentiteit(sb, user, pv) {
   return null;
 }
 
+async function mailDomein2(sb, userId, naam) {
+  const gebruiker = await sb.auth.admin.getUserById(userId);
+  const email = gebruiker.data?.user?.email || "";
+  if (!email) return { ok: false, fout: "Geen zakelijk adres gevonden. Het recht staat aan, de uitnodiging is niet verstuurd." };
+  return verstuurRedactie({
+    naar: email,
+    naam,
+    titel: "Domein II",
+    url: "https://domein2.boaportaal.nl",
+    uitleg: "Je mag de hele site bewerken: feitcodes, de beslisboom, de zakkaart en de oefenvragen voor milieu, welzijn en infrastructuur. Je legt een wijziging voor. De hoofdbeheerder keurt die goed.",
+    plek: "domein2.boaportaal.nl",
+    uitnodiging: true,
+  });
+}
+
 export default async (request) => {
   if (request.method !== "POST") return json({ fout: "POST" }, 405);
   const poort = await beheerder(request, ["beheerder"]);
@@ -93,7 +108,7 @@ export default async (request) => {
   const body = await request.json();
   if (body.actie === "lijst") {
     const q = String(body.q || "").trim().toLowerCase();
-    const { data, error } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam, rol, actief, whatsapp, mag_feit, mag_boom, mag_jargon, mag_trainer").order("pv_naam");
+    const { data, error } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam, rol, actief, whatsapp, mag_feit, mag_boom, mag_jargon, mag_trainer, mag_domein2").order("pv_naam");
     const bron = error
       ? await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam, rol, actief").order("pv_naam")
       : { data, error: null };
@@ -127,6 +142,7 @@ export default async (request) => {
         boom: Boolean(rij.mag_boom),
         jargon: Boolean(rij.mag_jargon),
         trainer: Boolean(rij.mag_trainer),
+        domein2: Boolean(rij.mag_domein2),
         mfa_uren: Number(ident.data?.mfa_uren) || 8,
         postbus,
       };
@@ -152,12 +168,15 @@ export default async (request) => {
       actief: Boolean(body.actief),
     }).eq("client_id", cid);
     if (kern.error) return json({ fout: `Het profiel is niet opgeslagen. ${kern.error.message}` }, 500);
+    const eerder = await poort.sb.from("boa_medewerker").select("mag_domein2").eq("client_id", cid).maybeSingle();
+    const hadDomein = Boolean(eerder.data?.mag_domein2);
     const vlaggen = await poort.sb.from("boa_medewerker").update({
       whatsapp: Boolean(body.whatsapp),
       mag_feit: Boolean(body.feit),
       mag_boom: Boolean(body.boom),
       mag_jargon: Boolean(body.jargon),
       mag_trainer: Boolean(body.trainer),
+      mag_domein2: Boolean(body.domein2),
     }).eq("client_id", cid);
     if (vlaggen.error && !/column|schema cache/i.test(vlaggen.error.message)) {
       return json({ fout: `Het profiel is niet opgeslagen. ${vlaggen.error.message}` }, 500);
@@ -203,7 +222,16 @@ export default async (request) => {
       soort: "CRITICAL_AUTH_CHANGE",
       niveau: "CRITICAL",
     });
-    return json({ ok: true });
+    let domeinMail = "";
+    if (body.domein2 && !hadDomein && !vlaggen.error) {
+      try {
+        const verzonden = await mailDomein2(poort.sb, huidig.user_id, pv || huidig.pv_naam);
+        domeinMail = verzonden.ok ? " Uitnodiging voor Domein II is verstuurd." : ` ${verzonden.fout || "De uitnodiging voor Domein II is niet verstuurd."}`;
+      } catch {
+        domeinMail = " De uitnodiging voor Domein II is niet verstuurd.";
+      }
+    }
+    return json({ ok: true, domeinMail });
   }
   if (body.actie === "weg") {
     const cid = String(body.client_id || "").trim().toUpperCase();
@@ -324,21 +352,23 @@ export default async (request) => {
   if (body.actie === "redactie") {
     const cid = String(body.sleutel || "").trim().toUpperCase();
     if (!/^BP-\d{4}-[A-Z]{2}$/.test(cid)) return json({ fout: "Vul een Client-ID in." }, 400);
-    const { data: huidig } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam, mag_feit, mag_boom, mag_jargon, mag_trainer").eq("client_id", cid).maybeSingle();
+    const { data: huidig } = await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam, mag_feit, mag_boom, mag_jargon, mag_trainer, mag_domein2").eq("client_id", cid).maybeSingle();
     if (!huidig) return json({ fout: "Geen medewerker met die Client-ID." }, 404);
     const vlaggen = {
       mag_feit: Boolean(body.feit),
       mag_boom: Boolean(body.boom),
       mag_jargon: Boolean(body.jargon),
       mag_trainer: Boolean(body.trainer),
+      mag_domein2: Boolean(body.domein2),
     };
-    const { data, error } = await poort.sb.from("boa_medewerker").update(vlaggen).eq("client_id", cid).select("user_id, client_id, pv_naam, mag_feit, mag_boom, mag_jargon, mag_trainer").maybeSingle();
-    if (error || !data) return json({ fout: error ? "Draai schema-0014.sql in Supabase." : "Geen medewerker met die Client-ID." }, error ? 500 : 404);
+    const { data, error } = await poort.sb.from("boa_medewerker").update(vlaggen).eq("client_id", cid).select("user_id, client_id, pv_naam, mag_feit, mag_boom, mag_jargon, mag_trainer, mag_domein2").maybeSingle();
+    if (error || !data) return json({ fout: error ? "Draai schema-0028.sql in Supabase." : "Geen medewerker met die Client-ID." }, error ? 500 : 404);
     const delen = [
-      ["mag_feit", "Feitcodes", "https://feitcode.boaportaal.nl", "Je mag feitcodes voorleggen die op het portaal staan. De akte en het Feitenboekje gaan voor."],
-      ["mag_boom", "Beslisbomen", "https://beslisboom.boaportaal.nl", "Je mag een beslisboom voorleggen. Het blijft een geheugensteun. De akte en de wet gaan voor."],
-      ["mag_jargon", "Vakjargon", "https://vakjargon.boaportaal.nl", "Je mag een begrip voorleggen. Kort houden, en alleen wat klopt met de wet of het Feitenboekje."],
-      ["mag_trainer", "Trainer", "https://trainer.boaportaal.nl", "Je mag een oefenvraag, een beginsel of een casus voorleggen. Het antwoord blijft de wettekst volgen."],
+      ["mag_feit", "Feitcodes", "https://feitcode.boaportaal.nl", "Je mag feitcodes voorleggen die op het portaal staan. De akte en het Feitenboekje gaan voor.", false, "boaportaal.nl"],
+      ["mag_boom", "Beslisbomen", "https://beslisboom.boaportaal.nl", "Je mag een beslisboom voorleggen. Het blijft een geheugensteun. De akte en de wet gaan voor.", false, "boaportaal.nl"],
+      ["mag_jargon", "Vakjargon", "https://vakjargon.boaportaal.nl", "Je mag een begrip voorleggen. Kort houden, en alleen wat klopt met de wet of het Feitenboekje.", false, "boaportaal.nl"],
+      ["mag_trainer", "Trainer", "https://trainer.boaportaal.nl", "Je mag een oefenvraag, een beginsel of een casus voorleggen. Het antwoord blijft de wettekst volgen.", false, "boaportaal.nl"],
+      ["mag_domein2", "Domein II", "https://domein2.boaportaal.nl", "Je mag de hele site bewerken: feitcodes, de beslisboom, de zakkaart en de oefenvragen voor milieu, welzijn en infrastructuur.", true, "domein2.boaportaal.nl"],
     ];
     const nieuw = delen.filter(([veld]) => data[veld] && !huidig[veld]);
     const mails = [];
@@ -348,9 +378,9 @@ export default async (request) => {
       const email = gebruiker.data?.user?.email || "";
       if (!email) mailFout = "Geen zakelijk adres gevonden. Het recht staat aan, de uitnodiging is niet verstuurd.";
       else {
-        for (const [, titel, url, uitleg] of nieuw) {
+        for (const [, titel, url, uitleg, uitnodiging, plek] of nieuw) {
           try {
-            const verzonden = await verstuurRedactie({ naar: email, naam: data.pv_naam, titel, url, uitleg });
+            const verzonden = await verstuurRedactie({ naar: email, naam: data.pv_naam, titel, url, uitleg, uitnodiging, plek });
             if (verzonden.ok) mails.push(titel);
             else mailFout = verzonden.fout || "De uitnodiging is niet verstuurd.";
           } catch {
@@ -364,6 +394,7 @@ export default async (request) => {
       data.mag_boom ? "beslisbomen aan" : "beslisbomen uit",
       data.mag_jargon ? "vakjargon aan" : "vakjargon uit",
       data.mag_trainer ? "trainer aan" : "trainer uit",
+      data.mag_domein2 ? "domein II aan" : "domein II uit",
     ].join(", ");
     await poort.sb.from("boa_audit").insert({
       beheerder_id: poort.med.client_id,
@@ -417,6 +448,7 @@ export default async (request) => {
     mag_boom: Boolean(body.boom),
     mag_jargon: Boolean(body.jargon),
     mag_trainer: Boolean(body.trainer),
+    mag_domein2: Boolean(body.domein2),
   }).eq("user_id", user.id);
   const voornaam = String(body.voornaam || user.user_metadata?.voornaam || "").trim();
   const achternaam = String(body.achternaam || user.user_metadata?.achternaam || "").trim();
@@ -450,6 +482,14 @@ export default async (request) => {
     mailFout = verzonden.fout || "";
   } catch (err) {
     mailFout = err?.message || "De uitnodiging is niet verstuurd. Controleer het wachtwoord van onboarding@boaportaal.nl op de systeem-site.";
+  }
+  if (body.domein2) {
+    try {
+      const extra = await mailDomein2(poort.sb, user.id, pv);
+      if (!extra.ok) mailFout = extra.fout || mailFout;
+    } catch {
+      mailFout = mailFout || "De uitnodiging voor Domein II is niet verstuurd.";
+    }
   }
   await poort.sb.from("boa_audit").insert({
     beheerder_id: poort.med.client_id,

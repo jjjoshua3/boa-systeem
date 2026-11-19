@@ -221,24 +221,26 @@ export async function verstuurPostbusWachtwoord({ naar, naam, local, wachtwoordP
   return { ok: true };
 }
 
-export async function verstuurRedactie({ naar, naam, titel, url, uitleg }) {
+export async function verstuurRedactie({ naar, naam, titel, url, uitleg, plek = "boaportaal.nl", uitnodiging = false }) {
   const wachtwoord = process.env.PURELYMAIL_ONBOARDING_PASSWORD;
   if (!wachtwoord) {
     return { ok: false, fout: "Zet PURELYMAIL_ONBOARDING_PASSWORD op de Netlify-site van systeem. Dan gaat de uitnodiging vanaf onboarding@boaportaal.nl." };
   }
   const { default: nodemailer } = await import("nodemailer");
   const aanhef = naam ? `Hoi ${naam},` : "Hoi,";
+  const kop = uitnodiging ? `U bent uitgenodigd voor ${titel}` : `Uitnodiging · ${titel}`;
+  const eerste = uitnodiging ? `U bent uitgenodigd voor ${titel}.` : `Je hebt toegang gekregen tot de redactie voor ${titel}.`;
   const tekst = [
     aanhef,
     "",
-    `Je hebt toegang gekregen tot de redactie voor ${titel}.`,
+    eerste,
     "",
     uitleg,
     "",
     "Zo werkt het:",
     "1. Open de link. Inloggen doe je met hetzelfde e-mailadres als waarmee je deze mail ontvangen hebt.",
     "2. Kies de tekst, pas die aan en leg hem voor.",
-    "3. De hoofdbeheerder keurt hem goed. Pas daarna staat hij op boaportaal.nl.",
+    `3. De hoofdbeheerder keurt hem goed. Pas daarna staat hij op ${plek}.`,
     "",
     url,
     "",
@@ -247,17 +249,17 @@ export async function verstuurRedactie({ naar, naam, titel, url, uitleg }) {
   ].join("\n");
   const html = `<div style="font-family:Georgia,Segoe UI,sans-serif;font-size:16px;line-height:1.55;color:#0f2537;max-width:560px">
     <p style="margin:0 0 8px;letter-spacing:.14em;font-size:12px;color:#9a5b12">BOA PORTAAL</p>
-    <h1 style="font-family:Georgia,serif;font-weight:500;font-size:26px;margin:0 0 12px">Uitnodiging · ${titel}</h1>
+    <h1 style="font-family:Georgia,serif;font-weight:500;font-size:26px;margin:0 0 12px">${kop}</h1>
     <p>${aanhef}</p>
-    <p>Je hebt toegang gekregen tot de redactie voor ${titel}.</p>
+    <p>${eerste}</p>
     <p>${uitleg}</p>
-    <p style="margin:18px 0"><a href="${url}" style="display:inline-block;background:#0f2537;color:#fff;text-decoration:none;border-radius:12px;padding:10px 16px">${titel} openen</a></p>
+    <p style="margin:18px 0"><a href="${url}" style="display:inline-block;background:#1f6b45;color:#fff;text-decoration:none;border-radius:12px;padding:10px 16px">${titel} openen</a></p>
     <p style="color:#4b5563;font-size:14px">${url}</p>
     <p><b>Zo werkt het</b></p>
     <ol style="padding-left:18px;color:#0f2537">
       <li>Open de link. Inloggen doe je met hetzelfde e-mailadres als waarmee je deze mail ontvangen hebt.</li>
       <li>Kies de tekst, pas die aan en leg hem voor.</li>
-      <li>De hoofdbeheerder keurt hem goed. Pas daarna staat hij op boaportaal.nl.</li>
+      <li>De hoofdbeheerder keurt hem goed. Pas daarna staat hij op ${plek}.</li>
     </ol>
     <p>Groet,<br>BOA Portaal</p>
   </div>`;
@@ -270,7 +272,7 @@ export async function verstuurRedactie({ naar, naam, titel, url, uitleg }) {
   await smtp.sendMail({
     from: { name: "BOA Portaal", address: "onboarding@boaportaal.nl" },
     to: naar,
-    subject: `Uitnodiging voor de redactie ${titel}`,
+    subject: uitnodiging ? `U bent uitgenodigd voor ${titel}` : `Uitnodiging voor de redactie ${titel}`,
     text: tekst,
     html,
   });

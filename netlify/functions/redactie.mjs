@@ -1,6 +1,6 @@
 import { beheerder } from "./lib.mjs";
 
-const SOORTEN = new Set(["feit", "boom", "jargon", "vraag", "beginsel", "casus"]);
+const SOORTEN = new Set(["feit", "boom", "jargon", "vraag", "beginsel", "casus", "domein2"]);
 
 function koppen(request) {
   const bron = request.headers.get("origin") || "";
@@ -24,11 +24,19 @@ export default async function handler(request) {
   const poort = await beheerder(request, ["beheerder", "support"]);
   if (poort.fout) return antwoord(request, { fout: poort.fout }, poort.status);
   const body = await request.json().catch(() => ({}));
-  const { data: recht, error: rechtFout } = await poort.sb
+  let rechtQuery = await poort.sb
     .from("boa_medewerker")
-    .select("mag_feit, mag_boom, mag_jargon, mag_trainer, rol, client_id, pv_naam")
+    .select("mag_feit, mag_boom, mag_jargon, mag_trainer, mag_domein2, rol, client_id, pv_naam")
     .eq("user_id", poort.user.id)
     .maybeSingle();
+  if (rechtQuery.error && /column|schema cache/i.test(rechtQuery.error.message || "")) {
+    rechtQuery = await poort.sb
+      .from("boa_medewerker")
+      .select("mag_feit, mag_boom, mag_jargon, mag_trainer, rol, client_id, pv_naam")
+      .eq("user_id", poort.user.id)
+      .maybeSingle();
+  }
+  const { data: recht, error: rechtFout } = rechtQuery;
   if (rechtFout) return antwoord(request, { fout: "Draai schema-0014.sql in Supabase." }, 500);
   const beheer = recht?.rol === "beheerder";
   const mag = {
@@ -36,6 +44,7 @@ export default async function handler(request) {
     boom: beheer || Boolean(recht?.mag_boom),
     jargon: beheer || Boolean(recht?.mag_jargon),
     trainer: beheer || Boolean(recht?.mag_trainer),
+    domein2: beheer || Boolean(recht?.mag_domein2),
   };
   const actie = String(body.actie || "ik");
   if (actie === "ik") {
@@ -67,7 +76,7 @@ export default async function handler(request) {
       basis: body.basis && typeof body.basis === "object" ? body.basis : null,
       indiener: recht.client_id,
     });
-    if (error) return antwoord(request, { fout: "Draai schema-0014.sql in Supabase." }, 500);
+    if (error) return antwoord(request, { fout: soort === "domein2" ? "Draai schema-0028.sql in Supabase." : "Draai schema-0014.sql in Supabase." }, 500);
     await log(poort.sb, {
       wie: recht.client_id,
       naam: recht.pv_naam,
@@ -106,6 +115,7 @@ export default async function handler(request) {
       notitie: String(body.notitie || "").slice(0, 400),
     }).eq("id", id);
     const weg = rij.payload?.verwijderd === true;
+    const plek = rij.soort === "domein2" ? "domein2.boaportaal.nl" : "boaportaal.nl";
     await log(poort.sb, {
       wie: recht.client_id,
       naam: recht.pv_naam,
@@ -115,7 +125,7 @@ export default async function handler(request) {
       titel: rij.titel,
       sleutel: rij.sleutel,
       reden: besluit === "goed"
-        ? `Goedgekeurd en op boaportaal.nl gezet: ${naamVan(rij.soort)} ${rij.titel}. Sleutel ${rij.sleutel}. Voorgelegd door ${rij.indiener}.${weg ? " De tekst is van de site gehaald." : ""}`
+        ? `Goedgekeurd en op ${plek} gezet: ${naamVan(rij.soort)} ${rij.titel}. Sleutel ${rij.sleutel}. Voorgelegd door ${rij.indiener}.${weg ? " De tekst is van de site gehaald." : ""}`
         : `Afgewezen. De site blijft zoals hij was: ${naamVan(rij.soort)} ${rij.titel}. Sleutel ${rij.sleutel}. Voorgelegd door ${rij.indiener}.`,
     });
     return antwoord(request, { ok: true });
@@ -132,11 +142,12 @@ function bronVan(soort) {
   if (soort === "feit") return "feitcode";
   if (soort === "boom") return "beslisboom";
   if (soort === "jargon") return "vakjargon";
+  if (soort === "domein2") return "systeem";
   return "trainer";
 }
 
 function naamVan(soort) {
-  return { feit: "feitcode", boom: "beslisboom", jargon: "begrip", vraag: "trainervraag", beginsel: "beginsel", casus: "casus" }[soort] || soort;
+  return { feit: "feitcode", boom: "beslisboom", jargon: "begrip", vraag: "trainervraag", beginsel: "beginsel", casus: "casus", domein2: "domein II" }[soort] || soort;
 }
 
 async function log(sb, regel) {
