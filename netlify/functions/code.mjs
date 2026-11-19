@@ -1,4 +1,5 @@
 import { admin } from "./lib.mjs";
+import zxcvbn from "zxcvbn";
 
 const GRATIS = new Set([
   "gmail.com", "googlemail.com", "hotmail.com", "hotmail.nl", "outlook.com", "outlook.nl",
@@ -26,6 +27,16 @@ function adresGeldig(email) {
   if (!match) return "";
   if (GRATIS.has(match[1])) return "";
   return stuk;
+}
+
+function wachtwoordFout(password, extra = []) {
+  const tekst = String(password || "");
+  if (tekst.length < 12) return "Kies een wachtwoord van minstens 12 tekens. De mailserver eist dat ook.";
+  if (tekst.length > 200) return "Het wachtwoord is te lang.";
+  const score = zxcvbn(tekst, extra.map((deel) => String(deel || "")).filter((deel) => deel.length > 1));
+  const dagen = Math.floor(Number(score?.crack_times_seconds?.offline_fast_hashing_1e10_per_second || 0) / 86400);
+  if (dagen < 30) return `Dit wachtwoord is te makkelijk. De mailserver eist minstens 30 dagen kraaktijd. Dit wachtwoord zit op ${dagen} dagen. Gebruik een zin van vier willekeurige woorden.`;
+  return "";
 }
 
 async function verstuurCode(naar, code, soort) {
@@ -85,7 +96,8 @@ export default async (request) => {
     type = "recovery";
   } else {
     const password = String(body.password || "");
-    if (password.length < 10) return antwoord(request, { fout: "Het wachtwoord is te kort." }, 400);
+    const zwak = wachtwoordFout(password, [email, body.voornaam, body.achternaam, body.naam]);
+    if (zwak) return antwoord(request, { fout: zwak }, 400);
     link = await sb.auth.admin.generateLink({
       type: "signup",
       email,
