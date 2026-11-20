@@ -129,6 +129,21 @@
       const rest = initialen(parts.slice(1).join(" "));
       return rest.length ? `${mooi(parts[0])}, ${rest.join(" ")}.` : mooi(parts[0]);
     };
+    const collegaNaam = (voor, achter) => {
+      const v = String(voor || "").trim();
+      const a = String(achter || "").trim();
+      if (!v && !a) return "";
+      const mooi = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
+      const tussen = new Set(["de", "van", "der", "den", "ten", "ter", "het", "t"]);
+      const delen = a.split(/\s+/).filter(Boolean);
+      let letter = "";
+      for (let i = delen.length - 1; i >= 0; i -= 1) {
+        const schoon = delen[i].replace(/[^A-Za-z]/g, "");
+        if (schoon && !tussen.has(delen[i].toLowerCase())) { letter = schoon.charAt(0).toUpperCase(); break; }
+      }
+      if (v && letter) return `${mooi(v)}, ${letter}.`;
+      return mooi(v || a);
+    };
     const aanUit = (aan) => aan ? "aan" : "uit";
     const soortLabel = (soort) => ({
       REDACTIE_VOORSTEL: "Redactie voorgelegd",
@@ -387,11 +402,13 @@
       const velden = (rij, nieuw) => {
         const delen = String(rij?.postbus || "").includes(".") && !/^bp-\d{4}-[a-z]{2}$/i.test(rij?.postbus || "") ? String(rij.postbus).split(".") : [];
         const mooi = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+        const voor = rij?.voornaam || mooi(delen[0] || "");
+        const achter = rij?.achternaam || mooi(delen.slice(1).join(" ") || "");
         return `<div class="tweevelden">
           <label>PV-naam<input name="pv_naam" value="${esc(rij?.pv_naam || "")}" ${nieuw ? "" : "required"} placeholder="DE VRIES, M.A."></label>
           <label>Rol<select name="rol"><option value="support" ${rij?.rol === "beheerder" ? "" : "selected"}>Support</option><option value="beheerder" ${rij?.rol === "beheerder" ? "selected" : ""}>Beheerder</option></select></label>
-          <label>Voornaam<input name="voornaam" required placeholder="Jurensly" value="${esc(mooi(delen[0] || ""))}"></label>
-          <label>Achternaam<input name="achternaam" required placeholder="Nurse" value="${esc(mooi(delen.slice(1).join("") || ""))}"></label>
+          <label>Voornaam<input name="voornaam" required placeholder="Jurensly" value="${esc(voor)}"></label>
+          <label>Achternaam<input name="achternaam" required placeholder="Nurse" value="${esc(achter)}"></label>
           <p class="zacht">Het mailadres wordt voornaam.achternaam@boaportaal.nl. Inloggen op de mail doe je met die naam, zonder @boaportaal.nl.${rij?.postbus ? ` Huidige postbus: ${esc(rij.postbus)}.` : ""}</p>
         </div>
         <div class="vinken">
@@ -411,7 +428,7 @@
           ${velden(null, true)}
           <button>Uitnodigen en mailen</button>
         </form>` : open ? `<form id="staf-profiel" class="kaart">
-          <h2>${esc(zichtbaar(open.pv_naam))}</h2>
+          <h2>${esc(collegaNaam(open.voornaam, open.achternaam) || zichtbaar(open.pv_naam))}</h2>
           <p class="zacht">${esc(open.client_id)}</p>
           ${velden(open, false)}
           <label>Reden<textarea name="reden" required minlength="12" placeholder="Waarom deze aanpassing"></textarea></label>
@@ -429,7 +446,7 @@
       const lijst = `<div class="kaart">
           <form id="staf-zoek" class="zoekbalk"><input name="q" value="${esc(stafQ)}" placeholder="Zoek naam, Client-ID of postbus"><button class="sec" type="submit">Zoek</button></form>
           <table class="strak"><thead><tr><th>Naam</th><th>Rol</th><th>Postbus</th></tr></thead><tbody>
-            ${staf.length ? staf.map((rij) => `<tr class="rijklik ${rij.client_id === stafOpen ? "aan" : ""}" data-staf="${esc(rij.client_id)}"><td><b>${esc(zichtbaar(rij.pv_naam))}</b><br><span class="zacht">${esc(rij.client_id)}${rij.actief ? "" : " · uit"}</span></td><td>${esc(rij.rol)}</td><td>${esc(rij.postbus || "—")}</td></tr>`).join("") : `<tr><td colspan="3">Geen medewerkers in deze selectie.</td></tr>`}
+            ${staf.length ? staf.map((rij) => `<tr class="rijklik ${rij.client_id === stafOpen ? "aan" : ""}" data-staf="${esc(rij.client_id)}"><td><b>${esc(collegaNaam(rij.voornaam, rij.achternaam) || zichtbaar(rij.pv_naam) || rij.client_id)}</b><br><span class="zacht">${esc(rij.client_id)}${rij.actief ? "" : " · uit"}</span></td><td>${esc(rij.rol)}</td><td>${esc(rij.postbus || "—")}</td></tr>`).join("") : `<tr><td colspan="3">Geen medewerkers in deze selectie.</td></tr>`}
           </tbody></table>
         </div>`;
       const portaal = `<details class="kaart"><summary>Alleen een portaalaccount, geen medewerker</summary>

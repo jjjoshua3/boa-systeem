@@ -113,6 +113,8 @@ export default async (request) => {
       ? await poort.sb.from("boa_medewerker").select("user_id, client_id, pv_naam, rol, actief").order("pv_naam")
       : { data, error: null };
     if (bron.error) return json({ fout: "De medewerkers zijn niet geladen." }, 500);
+    const { data: adressen } = await poort.sb.from("boa_mail_adres").select("local, voornaam, achternaam");
+    const perLocal = new Map((adressen || []).map((rij) => [String(rij.local || "").toLowerCase(), rij]));
     const rijen = [];
     for (const rij of bron.data || []) {
       const ident = await poort.sb.from("boa_identiteit").select("mfa_uren").eq("user_id", rij.user_id).maybeSingle();
@@ -131,10 +133,17 @@ export default async (request) => {
           bijgewerkt: new Date().toISOString(),
         });
         postbus = "jurensly.nurse";
+        perLocal.set("jurensly.nurse", { voornaam: "Jurensly", achternaam: "Nurse" });
       }
+      const meta = user.data?.user?.user_metadata || {};
+      const adres = perLocal.get(postbus.toLowerCase());
+      const voornaam = String(adres?.voornaam || meta.voornaam || "").trim();
+      const achternaam = String(adres?.achternaam || meta.achternaam || "").trim();
       const kaart = {
         client_id: rij.client_id,
         pv_naam: rij.pv_naam,
+        voornaam,
+        achternaam,
         rol: rij.rol,
         actief: rij.actief,
         whatsapp: Boolean(rij.whatsapp),
@@ -146,7 +155,7 @@ export default async (request) => {
         mfa_uren: Number(ident.data?.mfa_uren) || 8,
         postbus,
       };
-      const tekst = `${kaart.client_id} ${kaart.pv_naam} ${kaart.rol} ${postbus}`.toLowerCase();
+      const tekst = `${kaart.client_id} ${kaart.pv_naam} ${kaart.voornaam} ${kaart.achternaam} ${kaart.rol} ${postbus}`.toLowerCase();
       if (!q || tekst.includes(q)) rijen.push(kaart);
     }
     return json({ medewerkers: rijen });
